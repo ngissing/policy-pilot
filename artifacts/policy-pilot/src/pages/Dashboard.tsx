@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import {
+  useGetStatsSummary,
+  useGetStatsByDomain,
+  getGetStatsSummaryQueryKey,
+  getGetStatsByDomainQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   FileText,
   CheckCircle,
@@ -20,18 +23,6 @@ import {
   Cell,
 } from "recharts";
 
-interface StatsSummary {
-  total: number;
-  approved: number;
-  pending: number;
-  processing: number;
-}
-
-interface DomainStat {
-  domain: string;
-  count: number;
-}
-
 const DOMAIN_COLORS: Record<string, string> = {
   "student-wellbeing": "#3b82f6",
   curriculum: "#8b5cf6",
@@ -46,16 +37,12 @@ const DOMAIN_COLORS: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { data: summary } = useQuery<StatsSummary>({
-    queryKey: ["stats", "summary"],
-    queryFn: () => apiFetch("/stats/summary"),
-    refetchInterval: 10000,
+  const { data: summary } = useGetStatsSummary({
+    query: { queryKey: getGetStatsSummaryQueryKey(), refetchInterval: 10000 },
   });
 
-  const { data: domainStats = [] } = useQuery<DomainStat[]>({
-    queryKey: ["stats", "by-domain"],
-    queryFn: () => apiFetch("/stats/by-domain"),
-    refetchInterval: 10000,
+  const { data: domainStats = [] } = useGetStatsByDomain({
+    query: { queryKey: getGetStatsByDomainQueryKey(), refetchInterval: 10000 },
   });
 
   const cards = [

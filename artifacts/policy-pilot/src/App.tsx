@@ -10,7 +10,7 @@ import {
   useAuth,
   useUser,
 } from "@clerk/react";
-import { setAuthToken } from "@/lib/api";
+import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import DocumentLibrary from "@/pages/DocumentLibrary";
@@ -35,6 +35,8 @@ const queryClient = new QueryClient({
 });
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+setBaseUrl(import.meta.env.BASE_URL.replace(/\/$/, ""));
 
 const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -128,20 +130,10 @@ function ClerkTokenSync() {
   const { getToken, isSignedIn } = useAuth();
   useEffect(() => {
     if (!isSignedIn) {
-      setAuthToken(null);
+      setAuthTokenGetter(null);
       return;
     }
-    let cancelled = false;
-    const refresh = async () => {
-      const token = await getToken();
-      if (!cancelled) setAuthToken(token);
-    };
-    refresh();
-    const id = setInterval(refresh, 55_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
+    setAuthTokenGetter(() => getToken());
   }, [isSignedIn, getToken]);
   return null;
 }

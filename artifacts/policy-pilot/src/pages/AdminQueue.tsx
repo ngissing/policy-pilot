@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetReviewQueue,
+  useUpdateDocument,
+  getGetReviewQueueQueryKey,
+  getListDocumentsQueryKey,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,19 +34,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-interface Document {
-  id: number;
-  filename: string;
-  title?: string | null;
-  fileType: string;
-  issuingAuthority?: string | null;
-  policyDomain?: string | null;
-  documentType?: string | null;
-  audience?: string | null;
-  confidenceScore?: number | null;
-  status: string;
-}
+import type { Document } from "@workspace/api-client-react";
 
 const DOMAINS = [
   "student-wellbeing", "curriculum", "staff-hr", "administration",
@@ -50,33 +43,36 @@ const DOMAINS = [
 const DOC_TYPES = ["policy", "procedure", "guideline", "framework", "strategy"];
 const AUDIENCES = ["staff", "students", "parents", "all"];
 
+type FormState = {
+  title?: string;
+  issuingAuthority?: string;
+  policyDomain?: string;
+  documentType?: string;
+  audience?: string;
+};
+
 export default function AdminQueue() {
   const [editing, setEditing] = useState<Document | null>(null);
-  const [form, setForm] = useState<Partial<Document>>({});
+  const [form, setForm] = useState<FormState>({});
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: queue = [], isLoading } = useQuery<Document[]>({
-    queryKey: ["review-queue"],
-    queryFn: () => apiFetch("/documents/review-queue"),
-    refetchInterval: 10000,
+  const { data: queue = [], isLoading } = useGetReviewQueue({
+    query: { queryKey: getGetReviewQueueQueryKey(), refetchInterval: 10000 },
   });
 
-  const updateMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Document> }) =>
-      apiFetch(`/documents/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["review-queue"] });
-      qc.invalidateQueries({ queryKey: ["documents"] });
-      setEditing(null);
-      const action = vars.data.status === "rejected" ? "rejected" : "approved";
-      toast({ title: `Document ${action}` });
+  const updateMut = useUpdateDocument({
+    mutation: {
+      onSuccess: (_data, vars) => {
+        qc.invalidateQueries({ queryKey: getGetReviewQueueQueryKey() });
+        qc.invalidateQueries({ queryKey: getListDocumentsQueryKey() });
+        setEditing(null);
+        const action = vars.data.status === "rejected" ? "rejected" : "approved";
+        toast({ title: `Document ${action}` });
+      },
+      onError: (e) =>
+        toast({ title: "Error", description: e.message, variant: "destructive" }),
     },
-    onError: (e: Error) =>
-      toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const openEdit = (doc: Document) => {

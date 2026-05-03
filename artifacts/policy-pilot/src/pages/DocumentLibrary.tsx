@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSearch } from "wouter";
-import { apiFetch } from "@/lib/api";
+import {
+  useListDocuments,
+  useDeleteDocument,
+  getListDocumentsQueryKey,
+} from "@workspace/api-client-react";
+import type { ListDocumentsParams } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,21 +28,6 @@ import {
   Clock,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-interface Document {
-  id: number;
-  filename: string;
-  title?: string | null;
-  fileType: string;
-  issuingAuthority?: string | null;
-  policyDomain?: string | null;
-  documentType?: string | null;
-  audience?: string | null;
-  confidenceScore?: number | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 const DOMAINS = [
   "all",
@@ -106,17 +96,16 @@ export default function DocumentLibrary() {
   const highlightId = new URLSearchParams(searchString).get("highlight");
   const highlightRef = useRef<HTMLDivElement | null>(null);
 
-  const params = new URLSearchParams();
-  if (search) params.set("search", search);
-  if (domain !== "all") params.set("domain", domain);
-  if (docType !== "all") params.set("documentType", docType);
-  if (audience !== "all") params.set("audience", audience);
-  if (status !== "all") params.set("status", status);
+  const params: ListDocumentsParams = {
+    ...(search ? { search } : {}),
+    ...(domain !== "all" ? { domain } : {}),
+    ...(docType !== "all" ? { documentType: docType } : {}),
+    ...(audience !== "all" ? { audience } : {}),
+    ...(status !== "all" ? { status } : {}),
+  };
 
-  const { data: docs = [], isLoading } = useQuery<Document[]>({
-    queryKey: ["documents", search, domain, docType, audience, status],
-    queryFn: () => apiFetch(`/documents?${params.toString()}`),
-    refetchInterval: 5000,
+  const { data: docs = [], isLoading } = useListDocuments(params, {
+    query: { queryKey: getListDocumentsQueryKey(params), refetchInterval: 5000 },
   });
 
   useEffect(() => {
@@ -125,15 +114,15 @@ export default function DocumentLibrary() {
     }
   }, [highlightId, docs]);
 
-  const deleteMut = useMutation({
-    mutationFn: (id: number) =>
-      apiFetch<void>(`/documents/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["documents"] });
-      toast({ title: "Document deleted" });
+  const deleteMut = useDeleteDocument({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListDocumentsQueryKey() });
+        toast({ title: "Document deleted" });
+      },
+      onError: (e) =>
+        toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
     },
-    onError: (e: Error) =>
-      toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -222,15 +211,10 @@ export default function DocumentLibrary() {
           {docs.map((doc) => {
             const isHighlighted = highlightId === String(doc.id);
             return (
-              <div
-                key={doc.id}
-                ref={isHighlighted ? highlightRef : null}
-              >
+              <div key={doc.id} ref={isHighlighted ? highlightRef : null}>
                 <Card
                   className={`hover:shadow-md transition-all ${
-                    isHighlighted
-                      ? "ring-2 ring-blue-400 shadow-md bg-blue-50"
-                      : ""
+                    isHighlighted ? "ring-2 ring-blue-400 shadow-md bg-blue-50" : ""
                   }`}
                 >
                   <CardContent className="py-4">
@@ -285,7 +269,7 @@ export default function DocumentLibrary() {
                           variant="ghost"
                           size="icon"
                           className="text-slate-400 hover:text-red-500"
-                          onClick={() => deleteMut.mutate(doc.id)}
+                          onClick={() => deleteMut.mutate({ id: doc.id })}
                           disabled={deleteMut.isPending}
                         >
                           <Trash2 className="w-4 h-4" />
