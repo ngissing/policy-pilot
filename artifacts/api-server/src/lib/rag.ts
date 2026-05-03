@@ -1,8 +1,8 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { documentChunks, documents } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { cosineSimilarity, computeEmbedding } from "./embeddings.js";
+import { computeEmbedding } from "./embeddings.js";
 
 const DEPT_KEYWORDS = [
   "department", "ministry", "government", "board of education",
@@ -41,7 +41,7 @@ export interface RagOptions {
 const DEFAULT_FALLBACK =
   "I couldn't find a policy that covers this — consider uploading relevant documents.";
 
-const SIMILARITY_THRESHOLD = 0.05;
+const SIMILARITY_THRESHOLD = 0.3;
 
 export async function autoTagDocument(text: string): Promise<{
   title: string | null;
@@ -130,39 +130,59 @@ export async function ragChat(
   } = options;
 
   const queryEmbedding = await computeEmbedding(question);
+  const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-  const allChunks = await db
-    .select({
-      id: documentChunks.id,
-      content: documentChunks.content,
-      embedding: documentChunks.embedding,
-      documentId: documentChunks.documentId,
-      filename: documents.filename,
-      title: documents.title,
-      issuingAuthority: documents.issuingAuthority,
-      policyDomain: documents.policyDomain,
+  // Fetch more candidates than needed so scope/domain JS filters still yield enough results
+  const fetchLimit = maxSources * 4;
+
+  const domainCondition =
+    domainFilter && domainFilter !== "all"
+      ? `AND d.policy_domain = $4`
+      : "";
+
+  const params: unknown[] = [embeddingLiteral, SIMILARITY_THRESHOLD, fetchLimit];
+  if (domainFilter && domainFilter !== "all") {
+    params.push(domainFilter);
+  }
+
+  const result = await pool.query<{
+    id: number;
+    content: string;
+    document_id: number;
+    filename: string;
+    title: string | null;
+    issuing_authority: string | null;
+    policy_domain: string | null;
+    similarity: number;
+  }>(
+    `
+    SELECT
+      dc.id,
+      dc.content,
+      dc.document_id,
+      d.filename,
+      d.title,
+      d.issuing_authority,
+      d.policy_domain,
+      1 - (dc.embedding <=> $1::vector) AS similarity
+    FROM document_chunks dc
+    INNER JOIN documents d ON dc.document_id = d.id
+    WHERE dc.embedding IS NOT NULL
+      AND 1 - (dc.embedding <=> $1::vector) >= $2
+      ${domainCondition}
+    ORDER BY dc.embedding <=> $1::vector
+    LIMIT $3
+    `,
+    params
+  );
+
+  // Apply scope filter in JS (requires isDepartmentPolicy heuristic)
+  const scored = result.rows
+    .filter((c) => {
+      if (scopeFilter === "department" && !isDepartmentPolicy(c.issuing_authority)) return false;
+      if (scopeFilter === "school" && isDepartmentPolicy(c.issuing_authority)) return false;
+      return true;
     })
-    .from(documentChunks)
-    .innerJoin(documents, sql`${documentChunks.documentId} = ${documents.id}`);
-
-  // Apply scope + domain filters before scoring
-  const filteredChunks = allChunks.filter((c) => {
-    if (scopeFilter === "department" && !isDepartmentPolicy(c.issuingAuthority)) return false;
-    if (scopeFilter === "school" && isDepartmentPolicy(c.issuingAuthority)) return false;
-    if (domainFilter && domainFilter !== "all" && c.policyDomain !== domainFilter) return false;
-    return true;
-  });
-
-  const scored = filteredChunks
-    .map((chunk) => ({
-      ...chunk,
-      score:
-        Array.isArray(chunk.embedding) && (chunk.embedding as number[]).length > 0
-          ? cosineSimilarity(queryEmbedding, chunk.embedding as number[])
-          : 0,
-    }))
-    .filter((c) => c.score >= SIMILARITY_THRESHOLD)
-    .sort((a, b) => b.score - a.score)
     .slice(0, maxSources);
 
   if (scored.length === 0) {
@@ -172,7 +192,7 @@ export async function ragChat(
   const context = scored
     .map((c, i) => {
       const label = c.title ?? c.filename;
-      return `[${i + 1}] From "${label}" (doc #${c.documentId}):\n${c.content}`;
+      return `[${i + 1}] From "${label}" (doc #${c.document_id}):\n${c.content}`;
     })
     .join("\n\n---\n\n");
 
@@ -226,7 +246,7 @@ export async function ragChat(
   );
 
   const citations: Citation[] = usedIndices.map((i) => ({
-    documentId: scored[i].documentId,
+    documentId: scored[i].document_id,
     title: scored[i].title ?? null,
     filename: scored[i].filename,
     excerpt: scored[i].content.slice(0, 200),
