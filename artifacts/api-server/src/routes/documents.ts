@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { documents, documentChunks } from "@workspace/db";
-import { eq, lt, desc } from "drizzle-orm";
+import { and, eq, lt, desc } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
 import { computeEmbedding } from "../lib/embeddings.js";
@@ -85,7 +85,12 @@ router.get("/review-queue", async (req, res) => {
         updatedAt: documents.updatedAt,
       })
       .from(documents)
-      .where(lt(documents.confidenceScore, REVIEW_CONFIDENCE_THRESHOLD))
+      .where(
+        and(
+          eq(documents.status, "pending"),
+          lt(documents.confidenceScore, REVIEW_CONFIDENCE_THRESHOLD)
+        )
+      )
       .orderBy(desc(documents.createdAt));
 
     res.json(rows);
