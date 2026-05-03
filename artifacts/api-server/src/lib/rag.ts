@@ -16,11 +16,17 @@ export interface RagResult {
   citations: Citation[];
 }
 
-const NO_GROUNDING_MESSAGE =
+export interface RagOptions {
+  responseLength?: "concise" | "detailed";
+  responseTone?: "formal" | "friendly";
+  maxSources?: number;
+  fallbackMessage?: string;
+}
+
+const DEFAULT_FALLBACK =
   "I couldn't find a policy that covers this — consider uploading relevant documents.";
 
 const SIMILARITY_THRESHOLD = 0.05;
-const TOP_K = 5;
 
 export async function autoTagDocument(text: string): Promise<{
   title: string | null;
@@ -96,12 +102,18 @@ ${excerpt}`,
 
 export async function ragChat(
   question: string,
-  history: Array<{ role: string; content: string }>
+  history: Array<{ role: string; content: string }>,
+  options: RagOptions = {}
 ): Promise<RagResult> {
+  const {
+    responseLength = "detailed",
+    responseTone = "formal",
+    maxSources = 5,
+    fallbackMessage = DEFAULT_FALLBACK,
+  } = options;
+
   const queryEmbedding = await computeEmbedding(question);
 
-  // Retrieve ALL indexed chunks — single-school corpus is small enough.
-  // No pre-limit applied so no relevant documents are silently excluded.
   const allChunks = await db
     .select({
       id: documentChunks.id,
@@ -124,10 +136,10 @@ export async function ragChat(
     }))
     .filter((c) => c.score >= SIMILARITY_THRESHOLD)
     .sort((a, b) => b.score - a.score)
-    .slice(0, TOP_K);
+    .slice(0, maxSources);
 
   if (scored.length === 0) {
-    return { answer: NO_GROUNDING_MESSAGE, citations: [] };
+    return { answer: fallbackMessage, citations: [] };
   }
 
   const context = scored
@@ -149,15 +161,28 @@ export async function ragChat(
     ...safeHistory,
     {
       role: "user",
-      content: `Context from policy documents (ranked by relevance):\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${NO_GROUNDING_MESSAGE}"`,
+      content: `Context from policy documents (ranked by relevance):\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${fallbackMessage}"`,
     },
   ];
 
+  const toneInstruction =
+    responseTone === "friendly"
+      ? "Use a warm, approachable tone that is easy for parents and students to understand. Avoid jargon."
+      : "Use a professional, precise tone appropriate for school staff and governance contexts.";
+
+  const lengthInstruction =
+    responseLength === "concise"
+      ? "Be concise. Use bullet points where possible. Keep answers brief and direct — no more than 3-4 sentences or a short list."
+      : "Provide thorough explanations with relevant context. Include background detail where it helps the reader understand the policy.";
+
+  const systemPrompt = `You are PolicyPilot, an AI assistant specialising in Australian K-12 school policies. Answer questions strictly using the provided policy document context. Always cite documents by number [N]. Never fabricate information not present in the context. ${toneInstruction} ${lengthInstruction}`;
+
+  const maxTokens = responseLength === "concise" ? 512 : 1024;
+
   const response = await anthropic.messages.create({
     model: "claude-opus-4-5",
-    max_tokens: 1024,
-    system:
-      "You are PolicyPilot, an AI assistant specializing in Australian K-12 school policies. Answer questions strictly using the provided policy document context. Always cite documents by number [N]. Never fabricate information not present in the context.",
+    max_tokens: maxTokens,
+    system: systemPrompt,
     messages,
   });
 

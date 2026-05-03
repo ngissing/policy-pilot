@@ -1,10 +1,21 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { chatSessions, chatMessages } from "@workspace/db";
+import { chatSessions, chatMessages, appSettings } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
-import { ragChat } from "../lib/rag.js";
+import { ragChat, type RagOptions } from "../lib/rag.js";
 import { logger } from "../lib/logger.js";
 import { requireAuth, getAuth } from "../middlewares/requireAuth.js";
+
+async function loadRagOptions(): Promise<RagOptions> {
+  const [s] = await db.select().from(appSettings).limit(1);
+  if (!s) return {};
+  return {
+    responseLength: s.responseLength as RagOptions["responseLength"],
+    responseTone: s.responseTone as RagOptions["responseTone"],
+    maxSources: s.maxSources,
+    fallbackMessage: s.fallbackMessage,
+  };
+}
 
 const router = Router();
 
@@ -180,9 +191,11 @@ router.post("/sessions/:id/messages", async (req, res) => {
       .where(eq(chatMessages.sessionId, sessionId))
       .orderBy(chatMessages.createdAt);
 
+    const ragOptions = await loadRagOptions();
     const { answer, citations } = await ragChat(
       question,
-      history.slice(-10).map((m) => ({ role: m.role, content: m.content }))
+      history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+      ragOptions
     );
 
     const [assistantMsg] = await db

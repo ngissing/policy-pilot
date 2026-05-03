@@ -74,14 +74,27 @@ function parseCitations(raw: Citation[] | string | null | undefined): Citation[]
   return [];
 }
 
+interface AppSettings {
+  showFollowUpSuggestions: boolean;
+}
+
 export default function ChatPage() {
   const [activeSession, setActiveSession] = useState<number | null>(null);
   const [input, setInput] = useState("");
-  const [showFollowUps, setShowFollowUps] = useState(false);
+  const [localShowFollowUps, setLocalShowFollowUps] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, navigate] = useLocation();
+
+  const { data: chatSettings } = useQuery<AppSettings>({
+    queryKey: ["app-settings"],
+    queryFn: () => apiFetch("/settings"),
+    staleTime: 60_000,
+  });
+
+  const showFollowUps =
+    localShowFollowUps && (chatSettings?.showFollowUpSuggestions ?? true);
 
   const { data: sessions = [] } = useQuery<ChatSession[]>({
     queryKey: ["chat-sessions"],
@@ -104,7 +117,7 @@ export default function ChatPage() {
     onSuccess: (s) => {
       qc.invalidateQueries({ queryKey: ["chat-sessions"] });
       setActiveSession(s.id);
-      setShowFollowUps(false);
+      setLocalShowFollowUps(false);
     },
   });
 
@@ -117,7 +130,7 @@ export default function ChatPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["chat-session", activeSession] });
       qc.invalidateQueries({ queryKey: ["chat-sessions"] });
-      setShowFollowUps(true);
+      setLocalShowFollowUps(true);
     },
     onError: (e: Error) =>
       toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -131,7 +144,7 @@ export default function ChatPage() {
     const q = (question ?? input).trim();
     if (!q) return;
     setInput("");
-    setShowFollowUps(false);
+    setLocalShowFollowUps(false);
 
     let sid = activeSession;
     if (!sid) {
@@ -169,7 +182,7 @@ export default function ChatPage() {
             {sessions.map((s) => (
               <button
                 key={s.id}
-                onClick={() => { setActiveSession(s.id); setShowFollowUps(false); }}
+                onClick={() => { setActiveSession(s.id); setLocalShowFollowUps(false); }}
                 className={cn(
                   "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate",
                   activeSession === s.id
