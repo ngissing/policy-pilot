@@ -2,9 +2,10 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { documents, documentChunks } from "@workspace/db";
-import { eq, or, like, lt, desc } from "drizzle-orm";
+import { eq, lt, desc } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
+import { computeEmbedding } from "../lib/tfidf.js";
 import { logger } from "../lib/logger.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
 
@@ -144,13 +145,14 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
             documentId: doc.id,
             chunkIndex: idx,
             content,
+            embedding: computeEmbedding(content),
           }))
         );
       }
 
       logger.info(
-        { docId: doc.id, status: newStatus, confidence: tags.confidenceScore },
-        "Document tagged"
+        { docId: doc.id, status: newStatus, confidence: tags.confidenceScore, chunks: chunks.length },
+        "Document tagged and indexed"
       );
     } catch (err) {
       logger.error(err, "Error during AI tagging");
@@ -165,7 +167,7 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
     id: doc.id,
     filename: doc.filename,
     status: doc.status,
-    message: "Document uploaded. AI tagging in progress.",
+    message: "Document uploaded. AI tagging and indexing in progress.",
   };
 }
 
@@ -174,10 +176,6 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
     const uploadedFiles = req.files as Express.Multer.File[] | undefined;
     if (!uploadedFiles || uploadedFiles.length === 0) {
       res.status(400).json({ error: "No files uploaded. Send files under the 'files' field." });
-      return;
-    }
-    if (uploadedFiles.length > 20) {
-      res.status(400).json({ error: "Maximum 20 files per upload request." });
       return;
     }
 
@@ -237,7 +235,8 @@ router.patch("/:id", async (req, res) => {
       res.status(400).json({ error: "Invalid document id" });
       return;
     }
-    const body: Record<string, unknown> = typeof req.body === "object" && req.body !== null ? req.body : {};
+    const body: Record<string, unknown> =
+      typeof req.body === "object" && req.body !== null ? req.body : {};
 
     const allowedFields = [
       "title",

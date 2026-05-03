@@ -399,11 +399,14 @@ components:
     UploadDocumentBody:
       type: object
       properties:
-        file:
-          type: string
-          format: binary
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          maxItems: 20
       required:
-        - file
+        - files
 
     UploadDocumentResponse:
       type: object

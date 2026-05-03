@@ -35,7 +35,8 @@ export interface Document {
 }
 
 export interface UploadDocumentBody {
-  file: Blob;
+  /** @maxItems 20 */
+  files: Blob[];
 }
 
 export interface UploadDocumentResponse {

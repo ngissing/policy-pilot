@@ -224,7 +224,7 @@ export const uploadDocument = async (
   options?: RequestInit,
 ): Promise<UploadDocumentResponse> => {
   const formData = new FormData();
-  formData.append(`file`, uploadDocumentBody.file);
+  uploadDocumentBody.files.forEach((value) => formData.append(`files`, value));
 
   return customFetch<UploadDocumentResponse>(getUploadDocumentUrl(), {
     ...options,

@@ -1,7 +1,8 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import { documentChunks, documents } from "@workspace/db";
-import { like, or, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import { cosineSimilarity, computeEmbedding } from "./tfidf.js";
 
 export interface Citation {
   documentId: number;
@@ -16,6 +17,9 @@ export interface RagResult {
 
 const NO_GROUNDING_MESSAGE =
   "I couldn't find a policy that covers this — consider uploading relevant documents.";
+
+const SIMILARITY_THRESHOLD = 0.05;
+const TOP_K = 5;
 
 export async function autoTagDocument(text: string): Promise<{
   title: string | null;
@@ -93,33 +97,37 @@ export async function ragChat(
   question: string,
   history: Array<{ role: string; content: string }>
 ): Promise<RagResult> {
-  const searchTerms = question
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((w) => w.length > 3)
-    .slice(0, 5);
+  const queryEmbedding = computeEmbedding(question);
 
-  const conditions = searchTerms.map((term) =>
-    like(documentChunks.content, `%${term}%`)
-  );
-
-  const chunks = await db
+  const allChunks = await db
     .select({
       id: documentChunks.id,
       content: documentChunks.content,
+      embedding: documentChunks.embedding,
       documentId: documentChunks.documentId,
       filename: documents.filename,
     })
     .from(documentChunks)
     .innerJoin(documents, sql`${documentChunks.documentId} = ${documents.id}`)
-    .where(conditions.length > 0 ? or(...conditions) : sql`1=1`)
-    .limit(8);
+    .limit(500);
 
-  if (chunks.length === 0) {
+  const scored = allChunks
+    .map((chunk) => ({
+      ...chunk,
+      score:
+        chunk.embedding != null
+          ? cosineSimilarity(queryEmbedding, chunk.embedding as Record<string, number>)
+          : 0,
+    }))
+    .filter((c) => c.score >= SIMILARITY_THRESHOLD)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, TOP_K);
+
+  if (scored.length === 0) {
     return { answer: NO_GROUNDING_MESSAGE, citations: [] };
   }
 
-  const context = chunks
+  const context = scored
     .map(
       (c, i) =>
         `[${i + 1}] From "${c.filename}" (doc #${c.documentId}):\n${c.content}`
@@ -138,7 +146,7 @@ export async function ragChat(
     ...safeHistory,
     {
       role: "user",
-      content: `Context from policy documents:\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${NO_GROUNDING_MESSAGE}"`,
+      content: `Context from policy documents (ranked by relevance):\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${NO_GROUNDING_MESSAGE}"`,
     },
   ];
 
@@ -157,13 +165,13 @@ export async function ragChat(
     (m) => parseInt(m[1], 10) - 1
   );
   const usedIndices = [...new Set(citationRefs)].filter(
-    (i) => i >= 0 && i < chunks.length
+    (i) => i >= 0 && i < scored.length
   );
 
   const citations: Citation[] = usedIndices.map((i) => ({
-    documentId: chunks[i].documentId,
-    filename: chunks[i].filename,
-    excerpt: chunks[i].content.slice(0, 200),
+    documentId: scored[i].documentId,
+    filename: scored[i].filename,
+    excerpt: scored[i].content.slice(0, 200),
   }));
 
   return { answer: responseContent.text, citations };

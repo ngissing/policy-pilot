@@ -45,8 +45,10 @@ export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
 /**
  * @summary Upload one or more policy documents
  */
+export const uploadDocumentBodyFilesMax = 20;
+
 export const UploadDocumentBody = zod.object({
-  file: zod.instanceof(File),
+  files: zod.array(zod.instanceof(File)).max(uploadDocumentBodyFilesMax),
 });
 
 /**

@@ -26,6 +26,7 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -67,11 +68,12 @@ export default function AdminQueue() {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["review-queue"] });
       qc.invalidateQueries({ queryKey: ["documents"] });
       setEditing(null);
-      toast({ title: "Document approved" });
+      const action = vars.data.status === "rejected" ? "rejected" : "approved";
+      toast({ title: `Document ${action}` });
     },
     onError: (e: Error) =>
       toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -93,13 +95,18 @@ export default function AdminQueue() {
     updateMut.mutate({ id: editing.id, data: { ...form, status: "approved" } });
   };
 
+  const reject = () => {
+    if (!editing) return;
+    updateMut.mutate({ id: editing.id, data: { status: "rejected" } });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Review Queue</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Documents where AI confidence is below 70% — review and approve
+            Documents where AI confidence is below 75% — review, approve, or reject
           </p>
         </div>
         <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-sm px-3 py-1">
@@ -149,18 +156,24 @@ export default function AdminQueue() {
                             {doc.documentType}
                           </Badge>
                         )}
+                        {doc.issuingAuthority && (
+                          <Badge variant="outline" className="text-xs text-slate-500">
+                            {doc.issuingAuthority}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEdit(doc)}
-                    className="shrink-0"
-                  >
-                    <Edit className="w-3.5 h-3.5 mr-1.5" />
-                    Review
-                  </Button>
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEdit(doc)}
+                    >
+                      <Edit className="w-3.5 h-3.5 mr-1.5" />
+                      Review
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -176,6 +189,11 @@ export default function AdminQueue() {
           {editing && (
             <div className="space-y-4">
               <p className="text-sm text-slate-500 truncate">{editing.filename}</p>
+              {editing.confidenceScore != null && (
+                <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50">
+                  AI confidence: {Math.round(editing.confidenceScore * 100)}%
+                </Badge>
+              )}
 
               <div className="space-y-2">
                 <Label>Title</Label>
@@ -257,7 +275,16 @@ export default function AdminQueue() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={reject}
+              disabled={updateMut.isPending}
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            >
+              <XCircle className="w-3.5 h-3.5 mr-1.5" />
+              Reject
+            </Button>
             <Button variant="outline" onClick={() => setEditing(null)}>
               Cancel
             </Button>
@@ -266,7 +293,11 @@ export default function AdminQueue() {
               disabled={updateMut.isPending}
               className="bg-green-600 hover:bg-green-700"
             >
-              <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+              {updateMut.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+              )}
               Approve
             </Button>
           </DialogFooter>
