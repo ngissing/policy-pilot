@@ -36,6 +36,20 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   return res.json() as Promise<T>;
 }
 
+export async function apiBlob(path: string): Promise<{ blob: Blob; filename: string }> {
+  const auth = await authHeaders();
+  const res = await fetch(`${API_BASE}${path}`, { headers: auth });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((body as { error?: string }).error ?? res.statusText);
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? "download.txt";
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {

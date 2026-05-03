@@ -26,8 +26,12 @@ import {
   AlertCircle,
   Loader2,
   Clock,
+  ExternalLink,
+  Download,
+  Globe,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiBlob } from "@/lib/api";
 
 const DOMAINS = [
   "all",
@@ -124,6 +128,22 @@ export default function DocumentLibrary() {
         toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
     },
   });
+
+  const handleDownload = async (doc: { id: number; filename: string; fileType: string }) => {
+    try {
+      const { blob, filename } = await apiBlob(`/documents/${doc.id}/download`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Download failed", description: "Could not download this document.", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -259,11 +279,34 @@ export default function DocumentLibrary() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         {doc.confidenceScore != null && (
-                          <span className="text-xs text-slate-400">
+                          <span className="text-xs text-slate-400 mr-1">
                             {Math.round(doc.confidenceScore * 100)}% confidence
                           </span>
+                        )}
+                        {doc.sourceUrl ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-slate-400 hover:text-blue-600"
+                            title="Open source link"
+                            asChild
+                          >
+                            <a href={doc.sourceUrl} target="_blank" rel="noopener noreferrer">
+                              <Globe className="w-4 h-4" />
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-slate-400 hover:text-blue-600"
+                            title="Download extracted text"
+                            onClick={() => handleDownload(doc)}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
                         )}
                         <Button
                           variant="ghost"

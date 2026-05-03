@@ -29,6 +29,8 @@ export interface Document {
   audience?: string | null;
   /** @nullable */
   confidenceScore?: number | null;
+  /** @nullable */
+  sourceUrl?: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;

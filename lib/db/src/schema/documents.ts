@@ -22,6 +22,7 @@ export const documents = pgTable(
     documentType: text("document_type"),
     audience: text("audience"),
     confidenceScore: real("confidence_score"),
+    sourceUrl: text("source_url"),
     status: text("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

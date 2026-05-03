@@ -218,8 +218,8 @@ async function importTextDocument(
       documentType: tags.documentType,
       audience: tags.audience,
       confidenceScore: tags.confidenceScore,
+      sourceUrl,
       status,
-      // Store source URL in filename field if title is different
     })
     .returning();
 

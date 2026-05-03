@@ -37,6 +37,7 @@ router.get("/", async (req, res) => {
         documentType: documents.documentType,
         audience: documents.audience,
         confidenceScore: documents.confidenceScore,
+        sourceUrl: documents.sourceUrl,
         status: documents.status,
         createdAt: documents.createdAt,
         updatedAt: documents.updatedAt,
@@ -95,6 +96,8 @@ router.get("/review-queue", async (req, res) => {
         )
       )
       .orderBy(desc(documents.createdAt));
+
+    // add sourceUrl to review queue response
 
     res.json(rows);
   } catch (err) {
@@ -210,6 +213,41 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
   } catch (err) {
     logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+router.get("/:id/download", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid document id" }); return; }
+
+    const [doc] = await db
+      .select({
+        filename: documents.filename,
+        fileType: documents.fileType,
+        rawText: documents.rawText,
+        sourceUrl: documents.sourceUrl,
+      })
+      .from(documents)
+      .where(eq(documents.id, id));
+
+    if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+
+    if (doc.sourceUrl) {
+      res.redirect(302, doc.sourceUrl);
+      return;
+    }
+
+    if (!doc.rawText) { res.status(404).json({ error: "No content available for download" }); return; }
+
+    const base = doc.filename.replace(/\.[^.]+$/, "");
+    const downloadName = doc.fileType === "txt" ? doc.filename : `${base}.txt`;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
+    res.send(doc.rawText);
+  } catch (err) {
+    logger.error(err, "Error downloading document");
+    res.status(500).json({ error: "Failed to download document" });
   }
 });
 
