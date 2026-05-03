@@ -80,6 +80,35 @@ router.get("/sessions/:id", async (req, res) => {
   }
 });
 
+router.delete("/sessions/:id", async (req, res) => {
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid session id" });
+      return;
+    }
+    const [session] = await db
+      .select()
+      .from(chatSessions)
+      .where(and(eq(chatSessions.id, id), eq(chatSessions.userId, userId)));
+    if (!session) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+    await db.delete(chatMessages).where(eq(chatMessages.sessionId, id));
+    await db.delete(chatSessions).where(eq(chatSessions.id, id));
+    res.status(204).send();
+  } catch (err) {
+    logger.error(err, "Error deleting session");
+    res.status(500).json({ error: "Failed to delete session" });
+  }
+});
+
 router.get("/sessions/:id/messages", async (req, res) => {
   try {
     const { userId } = getAuth(req);
