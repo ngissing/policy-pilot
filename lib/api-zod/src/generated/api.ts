@@ -168,7 +168,16 @@ export const GetChatSessionResponse = zod.object({
       sessionId: zod.number(),
       role: zod.string(),
       content: zod.string(),
-      citations: zod.array(zod.object({}).passthrough()).nullish(),
+      citations: zod
+        .array(
+          zod.object({
+            documentId: zod.number(),
+            title: zod.string().nullish(),
+            filename: zod.string(),
+            excerpt: zod.string(),
+          }),
+        )
+        .nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
@@ -193,7 +202,16 @@ export const GetChatMessagesResponseItem = zod.object({
   sessionId: zod.number(),
   role: zod.string(),
   content: zod.string(),
-  citations: zod.array(zod.object({}).passthrough()).nullish(),
+  citations: zod
+    .array(
+      zod.object({
+        documentId: zod.number(),
+        title: zod.string().nullish(),
+        filename: zod.string(),
+        excerpt: zod.string(),
+      }),
+    )
+    .nullish(),
   createdAt: zod.coerce.date(),
 });
 export const GetChatMessagesResponse = zod.array(GetChatMessagesResponseItem);
@@ -214,7 +232,16 @@ export const SendChatMessageResponse = zod.object({
   sessionId: zod.number(),
   role: zod.string(),
   content: zod.string(),
-  citations: zod.array(zod.object({}).passthrough()).nullish(),
+  citations: zod
+    .array(
+      zod.object({
+        documentId: zod.number(),
+        title: zod.string().nullish(),
+        filename: zod.string(),
+        excerpt: zod.string(),
+      }),
+    )
+    .nullish(),
   createdAt: zod.coerce.date(),
 });
 

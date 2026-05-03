@@ -39,11 +39,21 @@ export interface UploadDocumentBody {
   files: Blob[];
 }
 
-export interface UploadDocumentResponse {
+export interface UploadResultItem {
   id: number;
   filename: string;
   status: string;
   message: string;
+}
+
+export interface UploadErrorItem {
+  filename: string;
+  error: string;
+}
+
+export interface UploadDocumentResponse {
+  results: UploadResultItem[];
+  errors: UploadErrorItem[];
 }
 
 export interface UpdateDocumentBody {
@@ -67,7 +77,13 @@ export interface CreateChatSessionBody {
   title?: string;
 }
 
-export type ChatMessageCitationsItem = { [key: string]: unknown };
+export interface Citation {
+  documentId: number;
+  /** @nullable */
+  title?: string | null;
+  filename: string;
+  excerpt: string;
+}
 
 export interface ChatMessage {
   id: number;
@@ -75,7 +91,7 @@ export interface ChatMessage {
   role: string;
   content: string;
   /** @nullable */
-  citations?: ChatMessageCitationsItem[] | null;
+  citations?: Citation[] | null;
   createdAt: string;
 }
 
