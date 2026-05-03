@@ -6,6 +6,16 @@ interface ApiErrorResponse {
   error?: string;
 }
 
+let _authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  _authToken = token;
+}
+
+function authHeaders(): Record<string, string> {
+  return _authToken ? { Authorization: `Bearer ${_authToken}` } : {};
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -14,6 +24,7 @@ export async function apiFetch<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(options?.headers ?? {}),
     },
   });
@@ -30,6 +41,7 @@ export async function apiFetch<T>(
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
   if (!res.ok) {

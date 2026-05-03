@@ -408,7 +408,7 @@ components:
       required:
         - files
 
-    UploadDocumentResponse:
+    UploadResultItem:
       type: object
       properties:
         id:
@@ -424,6 +424,32 @@ components:
         - filename
         - status
         - message
+
+    UploadErrorItem:
+      type: object
+      properties:
+        filename:
+          type: string
+        error:
+          type: string
+      required:
+        - filename
+        - error
+
+    UploadDocumentResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadResultItem"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadErrorItem"
+      required:
+        - results
+        - errors
 
     UpdateDocumentBody:
       type: object

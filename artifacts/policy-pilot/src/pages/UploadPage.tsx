@@ -136,17 +136,9 @@ export default function UploadPage() {
         formData.append("files", fs.file);
       }
 
-      let results: UploadResult[];
-      let errors: Array<{ filename: string; error: string }> = [];
-
-      if (pending.length === 1) {
-        const single = await apiUpload<UploadResult>("/documents/upload", formData);
-        results = [single];
-      } else {
-        const batch = await apiUpload<BatchUploadResponse>("/documents/upload", formData);
-        results = batch.results ?? [];
-        errors = batch.errors ?? [];
-      }
+      const batch = await apiUpload<BatchUploadResponse>("/documents/upload", formData);
+      const results: UploadResult[] = batch.results ?? [];
+      const errors: Array<{ filename: string; error: string }> = batch.errors ?? [];
 
       const resultByFilename = new Map(results.map((r) => [r.filename, r]));
       const errorByFilename = new Map(errors.map((e) => [e.filename, e.error]));

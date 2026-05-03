@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter, Link, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,6 +10,7 @@ import {
   useAuth,
   useUser,
 } from "@clerk/react";
+import { setAuthToken } from "@/lib/api";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import DocumentLibrary from "@/pages/DocumentLibrary";
@@ -122,6 +124,28 @@ function AppShell() {
   );
 }
 
+function ClerkTokenSync() {
+  const { getToken, isSignedIn } = useAuth();
+  useEffect(() => {
+    if (!isSignedIn) {
+      setAuthToken(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      const token = await getToken();
+      if (!cancelled) setAuthToken(token);
+    };
+    refresh();
+    const id = setInterval(refresh, 55_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isSignedIn, getToken]);
+  return null;
+}
+
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
 
@@ -159,6 +183,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <ClerkTokenSync />
             <AuthGuard>
               <AppShell />
             </AuthGuard>

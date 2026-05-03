@@ -197,11 +197,7 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
       return;
     }
 
-    if (results.length === 1 && errors.length === 0) {
-      res.status(202).json(results[0]);
-    } else {
-      res.status(202).json({ results, errors });
-    }
+    res.status(202).json({ results, errors });
   } catch (err) {
     logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });

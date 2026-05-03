@@ -45,9 +45,15 @@ export function getFileType(mimeType: string, filename: string): string {
   return "unknown";
 }
 
-export function chunkText(text: string, chunkSize = 800, overlap = 100): string[] {
+/**
+ * Split text into overlapping chunks approximating ~512 tokens each.
+ * Token approximation: 1 token ≈ 0.75 words, so:
+ *   512 tokens ≈ 384 words  → chunkSize = 400 words
+ *    50 tokens ≈  38 words  → overlap    =  40 words
+ */
+export function chunkText(text: string, chunkSize = 400, overlap = 40): string[] {
   const chunks: string[] = [];
-  const words = text.split(/\s+/);
+  const words = text.split(/\s+/).filter(Boolean);
   let start = 0;
 
   while (start < words.length) {
