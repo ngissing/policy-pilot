@@ -150,18 +150,24 @@ export default function SettingsPage() {
             Control how much detail the AI includes in each answer.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3">
+        <CardContent className="grid grid-cols-3 gap-3">
+          <OptionCard
+            selected={settings.responseLength === "brief"}
+            onClick={() => setSettings((s) => ({ ...s, responseLength: "brief" }))}
+            title="Brief"
+            description="1-2 sentences only — the fastest possible answer."
+          />
           <OptionCard
             selected={settings.responseLength === "concise"}
             onClick={() => setSettings((s) => ({ ...s, responseLength: "concise" }))}
             title="Concise"
-            description="Short, direct answers — bullet points where possible. Best for quick lookups."
+            description="Bullet points, 3-4 sentences. Best for quick lookups."
           />
           <OptionCard
             selected={settings.responseLength === "detailed"}
             onClick={() => setSettings((s) => ({ ...s, responseLength: "detailed" }))}
             title="Detailed"
-            description="Thorough explanations with context and background. Best for complex queries."
+            description="Full explanation with context. Best for complex queries."
           />
         </CardContent>
       </Card>

@@ -17,7 +17,7 @@ export interface RagResult {
 }
 
 export interface RagOptions {
-  responseLength?: "concise" | "detailed";
+  responseLength?: "brief" | "concise" | "detailed";
   responseTone?: "formal" | "friendly";
   maxSources?: number;
   fallbackMessage?: string;
@@ -171,13 +171,15 @@ export async function ragChat(
       : "Use a professional, precise tone appropriate for school staff and governance contexts.";
 
   const lengthInstruction =
-    responseLength === "concise"
-      ? "Be concise. Use bullet points where possible. Keep answers brief and direct — no more than 3-4 sentences or a short list."
+    responseLength === "brief"
+      ? "Be extremely brief. Respond in 1-2 sentences only. No bullet points, no preamble — just the essential answer."
+      : responseLength === "concise"
+      ? "Be concise. Use bullet points where possible. Keep answers direct — no more than 3-4 sentences or a short list."
       : "Provide thorough explanations with relevant context. Include background detail where it helps the reader understand the policy.";
 
   const systemPrompt = `You are PolicyPilot, an AI assistant specialising in Australian K-12 school policies. Answer questions strictly using the provided policy document context. Always cite documents by number [N]. Never fabricate information not present in the context. ${toneInstruction} ${lengthInstruction}`;
 
-  const maxTokens = responseLength === "concise" ? 512 : 1024;
+  const maxTokens = responseLength === "brief" ? 256 : responseLength === "concise" ? 512 : 1024;
 
   const response = await anthropic.messages.create({
     model: "claude-opus-4-5",

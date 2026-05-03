@@ -42,7 +42,7 @@ router.put("/", async (req, res) => {
 
     if (
       typeof body.responseLength === "string" &&
-      ["concise", "detailed"].includes(body.responseLength)
+      ["brief", "concise", "detailed"].includes(body.responseLength)
     ) {
       patch.responseLength = body.responseLength;
     }
