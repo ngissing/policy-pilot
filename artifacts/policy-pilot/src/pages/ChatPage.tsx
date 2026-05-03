@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import ReactMarkdown from "react-markdown";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -231,7 +232,21 @@ export default function ChatPage() {
                             : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm"
                         )}
                       >
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        {msg.role === "assistant" ? (
+                          <div className="prose prose-sm max-w-none text-slate-800
+                            prose-headings:font-semibold prose-headings:text-slate-900
+                            prose-h1:text-base prose-h2:text-sm prose-h3:text-sm
+                            prose-p:my-1 prose-p:leading-relaxed
+                            prose-ul:my-1 prose-ul:pl-4 prose-li:my-0.5
+                            prose-ol:my-1 prose-ol:pl-4
+                            prose-strong:font-semibold prose-strong:text-slate-900
+                            prose-code:bg-slate-100 prose-code:px-1 prose-code:rounded prose-code:text-xs
+                            prose-blockquote:border-l-2 prose-blockquote:border-blue-300 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-slate-600">
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        )}
                       </div>
                       {citations.length > 0 && (
                         <div className="space-y-1.5">
