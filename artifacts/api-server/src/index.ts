@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { warmupEmbeddings } from "./lib/embeddings";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,8 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  warmupEmbeddings()
+    .then(() => logger.info("Embedding model ready"))
+    .catch((e) => logger.warn({ err: e }, "Embedding model warmup failed"));
 });

@@ -140,12 +140,13 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
 
       const chunks = chunkText(rawText);
       if (chunks.length > 0) {
+        const embeddings = await Promise.all(chunks.map((c) => computeEmbedding(c)));
         await db.insert(documentChunks).values(
           chunks.map((content, idx) => ({
             documentId: doc.id,
             chunkIndex: idx,
             content,
-            embedding: computeEmbedding(content),
+            embedding: embeddings[idx],
           }))
         );
       }

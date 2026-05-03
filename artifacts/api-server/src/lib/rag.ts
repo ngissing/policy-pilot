@@ -98,7 +98,7 @@ export async function ragChat(
   question: string,
   history: Array<{ role: string; content: string }>
 ): Promise<RagResult> {
-  const queryEmbedding = computeEmbedding(question);
+  const queryEmbedding = await computeEmbedding(question);
 
   // Retrieve ALL indexed chunks — single-school corpus is small enough.
   // No pre-limit applied so no relevant documents are silently excluded.
