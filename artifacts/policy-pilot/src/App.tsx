@@ -19,6 +19,7 @@ import UploadPage from "@/pages/UploadPage";
 import ChatPage from "@/pages/ChatPage";
 import AdminQueue from "@/pages/AdminQueue";
 import SettingsPage from "@/pages/SettingsPage";
+import ScrapePage from "@/pages/ScrapePage";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -28,6 +29,7 @@ import {
   ClipboardCheck,
   Shield,
   Settings,
+  Globe,
   Loader2,
 } from "lucide-react";
 
@@ -47,6 +49,7 @@ const NAV_ITEMS = [
   { path: "/upload", label: "Upload", icon: Upload },
   { path: "/chat", label: "AI Chat", icon: MessageSquare },
   { path: "/review", label: "Review Queue", icon: ClipboardCheck },
+  { path: "/scrape", label: "Web Scraper", icon: Globe },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -123,6 +126,7 @@ function AppShell() {
           <Route path="/upload" component={UploadPage} />
           <Route path="/chat" component={ChatPage} />
           <Route path="/review" component={AdminQueue} />
+          <Route path="/scrape" component={ScrapePage} />
           <Route path="/settings" component={SettingsPage} />
           <Route component={NotFound} />
         </Switch>
