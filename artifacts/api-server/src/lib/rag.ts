@@ -6,6 +6,7 @@ import { cosineSimilarity, computeEmbedding } from "./tfidf.js";
 
 export interface Citation {
   documentId: number;
+  title: string | null;
   filename: string;
   excerpt: string;
 }
@@ -99,6 +100,8 @@ export async function ragChat(
 ): Promise<RagResult> {
   const queryEmbedding = computeEmbedding(question);
 
+  // Retrieve ALL indexed chunks — single-school corpus is small enough.
+  // No pre-limit applied so no relevant documents are silently excluded.
   const allChunks = await db
     .select({
       id: documentChunks.id,
@@ -106,17 +109,17 @@ export async function ragChat(
       embedding: documentChunks.embedding,
       documentId: documentChunks.documentId,
       filename: documents.filename,
+      title: documents.title,
     })
     .from(documentChunks)
-    .innerJoin(documents, sql`${documentChunks.documentId} = ${documents.id}`)
-    .limit(500);
+    .innerJoin(documents, sql`${documentChunks.documentId} = ${documents.id}`);
 
   const scored = allChunks
     .map((chunk) => ({
       ...chunk,
       score:
-        chunk.embedding != null
-          ? cosineSimilarity(queryEmbedding, chunk.embedding as Record<string, number>)
+        Array.isArray(chunk.embedding) && (chunk.embedding as number[]).length > 0
+          ? cosineSimilarity(queryEmbedding, chunk.embedding as number[])
           : 0,
     }))
     .filter((c) => c.score >= SIMILARITY_THRESHOLD)
@@ -128,10 +131,10 @@ export async function ragChat(
   }
 
   const context = scored
-    .map(
-      (c, i) =>
-        `[${i + 1}] From "${c.filename}" (doc #${c.documentId}):\n${c.content}`
-    )
+    .map((c, i) => {
+      const label = c.title ?? c.filename;
+      return `[${i + 1}] From "${label}" (doc #${c.documentId}):\n${c.content}`;
+    })
     .join("\n\n---\n\n");
 
   const safeHistory = history
@@ -170,6 +173,7 @@ export async function ragChat(
 
   const citations: Citation[] = usedIndices.map((i) => ({
     documentId: scored[i].documentId,
+    title: scored[i].title ?? null,
     filename: scored[i].filename,
     excerpt: scored[i].content.slice(0, 200),
   }));

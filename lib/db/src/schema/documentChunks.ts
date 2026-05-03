@@ -20,7 +20,7 @@ export const documentChunks = pgTable(
       .references(() => documents.id, { onDelete: "cascade" }),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
-    embedding: jsonb("embedding").$type<Record<string, number> | null>().default(null),
+    embedding: jsonb("embedding").$type<number[] | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -509,7 +509,7 @@ components:
         citations:
           type: ["array", "null"]
           items:
-            type: object
+            $ref: "#/components/schemas/Citation"
         createdAt:
           type: string
           format: date-time
@@ -582,3 +582,19 @@ components:
       required:
         - domain
         - count
+
+    Citation:
+      type: object
+      properties:
+        documentId:
+          type: integer
+        title:
+          type: ["string", "null"]
+        filename:
+          type: string
+        excerpt:
+          type: string
+      required:
+        - documentId
+        - filename
+        - excerpt
