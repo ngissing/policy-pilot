@@ -30,6 +30,7 @@ import type {
   StatsSummary,
   UpdateDocumentBody,
   UploadDocumentBody,
+  UploadDocumentResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -212,7 +213,7 @@ export function useListDocuments<
 }
 
 /**
- * @summary Upload a policy document
+ * @summary Upload one or more policy documents
  */
 export const getUploadDocumentUrl = () => {
   return `/api/documents/upload`;
@@ -221,11 +222,11 @@ export const getUploadDocumentUrl = () => {
 export const uploadDocument = async (
   uploadDocumentBody: UploadDocumentBody,
   options?: RequestInit,
-): Promise<Document> => {
+): Promise<UploadDocumentResponse> => {
   const formData = new FormData();
   formData.append(`file`, uploadDocumentBody.file);
 
-  return customFetch<Document>(getUploadDocumentUrl(), {
+  return customFetch<UploadDocumentResponse>(getUploadDocumentUrl(), {
     ...options,
     method: "POST",
     body: formData,
@@ -277,7 +278,7 @@ export type UploadDocumentMutationBody = BodyType<UploadDocumentBody>;
 export type UploadDocumentMutationError = ErrorType<Error>;
 
 /**
- * @summary Upload a policy document
+ * @summary Upload one or more policy documents
  */
 export const useUploadDocument = <
   TError = ErrorType<Error>,
@@ -300,7 +301,7 @@ export const useUploadDocument = <
 };
 
 /**
- * @summary Get documents needing human review (low confidence)
+ * @summary Get documents needing human review (confidence below threshold)
  */
 export const getGetReviewQueueUrl = () => {
   return `/api/documents/review-queue`;
@@ -351,7 +352,7 @@ export type GetReviewQueueQueryResult = NonNullable<
 export type GetReviewQueueQueryError = ErrorType<unknown>;
 
 /**
- * @summary Get documents needing human review (low confidence)
+ * @summary Get documents needing human review (confidence below threshold)
  */
 
 export function useGetReviewQueue<
@@ -633,7 +634,7 @@ export const useDeleteDocument = <
 };
 
 /**
- * @summary List all chat sessions
+ * @summary List all chat sessions for the authenticated user
  */
 export const getListChatSessionsUrl = () => {
   return `/api/chat/sessions`;
@@ -684,7 +685,7 @@ export type ListChatSessionsQueryResult = NonNullable<
 export type ListChatSessionsQueryError = ErrorType<unknown>;
 
 /**
- * @summary List all chat sessions
+ * @summary List all chat sessions for the authenticated user
  */
 
 export function useListChatSessions<
@@ -987,7 +988,7 @@ export const getGetChatMessagesQueryKey = (id: number) => {
 
 export const getGetChatMessagesQueryOptions = <
   TData = Awaited<ReturnType<typeof getChatMessages>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<Error>,
 >(
   id: number,
   options?: {
@@ -1022,7 +1023,7 @@ export const getGetChatMessagesQueryOptions = <
 export type GetChatMessagesQueryResult = NonNullable<
   Awaited<ReturnType<typeof getChatMessages>>
 >;
-export type GetChatMessagesQueryError = ErrorType<unknown>;
+export type GetChatMessagesQueryError = ErrorType<Error>;
 
 /**
  * @summary Get messages in a session
@@ -1030,7 +1031,7 @@ export type GetChatMessagesQueryError = ErrorType<unknown>;
 
 export function useGetChatMessages<
   TData = Awaited<ReturnType<typeof getChatMessages>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<Error>,
 >(
   id: number,
   options?: {
@@ -1052,7 +1053,7 @@ export function useGetChatMessages<
 }
 
 /**
- * @summary Send a message and get AI response (SSE stream)
+ * @summary Send a question and get a JSON AI response with citations
  */
 export const getSendChatMessageUrl = (id: number) => {
   return `/api/chat/sessions/${id}/messages`;
@@ -1062,8 +1063,8 @@ export const sendChatMessage = async (
   id: number,
   sendChatMessageBody: SendChatMessageBody,
   options?: RequestInit,
-): Promise<unknown> => {
-  return customFetch<unknown>(getSendChatMessageUrl(id), {
+): Promise<ChatMessage> => {
+  return customFetch<ChatMessage>(getSendChatMessageUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -1116,7 +1117,7 @@ export type SendChatMessageMutationBody = BodyType<SendChatMessageBody>;
 export type SendChatMessageMutationError = ErrorType<Error>;
 
 /**
- * @summary Send a message and get AI response (SSE stream)
+ * @summary Send a question and get a JSON AI response with citations
  */
 export const useSendChatMessage = <
   TError = ErrorType<Error>,

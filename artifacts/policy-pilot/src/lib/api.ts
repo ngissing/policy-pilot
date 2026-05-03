@@ -2,6 +2,10 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export const API_BASE = `${BASE}/api`;
 
+interface ApiErrorResponse {
+  error?: string;
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
@@ -14,10 +18,10 @@ export async function apiFetch<T>(
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as any).error ?? res.statusText);
+    const body: ApiErrorResponse = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? res.statusText);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
@@ -26,8 +30,8 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
     body: formData,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as any).error ?? res.statusText);
+    const body: ApiErrorResponse = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? res.statusText);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }

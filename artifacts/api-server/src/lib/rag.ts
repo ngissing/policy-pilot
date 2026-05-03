@@ -14,6 +14,9 @@ export interface RagResult {
   citations: Citation[];
 }
 
+const NO_GROUNDING_MESSAGE =
+  "I couldn't find a policy that covers this — consider uploading relevant documents.";
+
 export async function autoTagDocument(text: string): Promise<{
   title: string | null;
   issuingAuthority: string | null;
@@ -54,16 +57,25 @@ ${excerpt}`,
   try {
     const jsonMatch = content.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found in response");
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      title?: unknown;
+      issuingAuthority?: unknown;
+      policyDomain?: unknown;
+      documentType?: unknown;
+      audience?: unknown;
+      confidenceScore?: unknown;
+    };
     return {
-      title: parsed.title ?? null,
-      issuingAuthority: parsed.issuingAuthority ?? null,
-      policyDomain: parsed.policyDomain ?? null,
-      documentType: parsed.documentType ?? null,
-      audience: parsed.audience ?? null,
-      confidenceScore: typeof parsed.confidenceScore === "number"
-        ? Math.max(0, Math.min(1, parsed.confidenceScore))
-        : 0.5,
+      title: typeof parsed.title === "string" ? parsed.title : null,
+      issuingAuthority:
+        typeof parsed.issuingAuthority === "string" ? parsed.issuingAuthority : null,
+      policyDomain: typeof parsed.policyDomain === "string" ? parsed.policyDomain : null,
+      documentType: typeof parsed.documentType === "string" ? parsed.documentType : null,
+      audience: typeof parsed.audience === "string" ? parsed.audience : null,
+      confidenceScore:
+        typeof parsed.confidenceScore === "number"
+          ? Math.max(0, Math.min(1, parsed.confidenceScore))
+          : 0.5,
     };
   } catch {
     return {
@@ -103,6 +115,10 @@ export async function ragChat(
     .where(conditions.length > 0 ? or(...conditions) : sql`1=1`)
     .limit(8);
 
+  if (chunks.length === 0) {
+    return { answer: NO_GROUNDING_MESSAGE, citations: [] };
+  }
+
   const context = chunks
     .map(
       (c, i) =>
@@ -110,16 +126,19 @@ export async function ragChat(
     )
     .join("\n\n---\n\n");
 
+  const safeHistory = history
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .slice(-10)
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
   const messages: Array<{ role: "user" | "assistant"; content: string }> = [
-    ...history
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+    ...safeHistory,
     {
       role: "user",
-      content: `Context from policy documents:\n${context}\n\nQuestion: ${question}\n\nAnswer based on the policy documents above. Cite documents by number (e.g. [1]) when referencing specific policies. If the answer isn't in the documents, say so clearly.`,
+      content: `Context from policy documents:\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${NO_GROUNDING_MESSAGE}"`,
     },
   ];
 
@@ -127,15 +146,15 @@ export async function ragChat(
     model: "claude-opus-4-5",
     max_tokens: 1024,
     system:
-      "You are PolicyPilot, an AI assistant specializing in Australian K-12 school policies. You answer questions by referencing specific policy documents and citing your sources. Be concise, accurate, and always cite documents when making claims.",
+      "You are PolicyPilot, an AI assistant specializing in Australian K-12 school policies. Answer questions strictly using the provided policy document context. Always cite documents by number [N]. Never fabricate information not present in the context.",
     messages,
   });
 
-  const content = response.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type");
+  const responseContent = response.content[0];
+  if (responseContent.type !== "text") throw new Error("Unexpected response type");
 
-  const citationRefs = [...content.text.matchAll(/\[(\d+)\]/g)].map(
-    (m) => parseInt(m[1]) - 1
+  const citationRefs = [...responseContent.text.matchAll(/\[(\d+)\]/g)].map(
+    (m) => parseInt(m[1], 10) - 1
   );
   const usedIndices = [...new Set(citationRefs)].filter(
     (i) => i >= 0 && i < chunks.length
@@ -147,5 +166,5 @@ export async function ragChat(
     excerpt: chunks[i].content.slice(0, 200),
   }));
 
-  return { answer: content.text, citations };
+  return { answer: responseContent.text, citations };
 }

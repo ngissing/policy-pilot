@@ -62,18 +62,19 @@ export default function UploadPage() {
       );
       try {
         const formData = new FormData();
-        formData.append("file", fs.file);
+        formData.append("files", fs.file);
         const result = await apiUpload<UploadResult>("/documents/upload", formData);
         setFiles((prev) =>
           prev.map((f) =>
             f.file === fs.file ? { ...f, status: "success", result } : f
           )
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Upload failed";
         setFiles((prev) =>
           prev.map((f) =>
             f.file === fs.file
-              ? { ...f, status: "error", error: err.message }
+              ? { ...f, status: "error", error: message }
               : f
           )
         );

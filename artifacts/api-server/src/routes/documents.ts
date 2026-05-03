@@ -11,7 +11,7 @@ import { requireAuth } from "../middlewares/requireAuth.js";
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024, files: 20 },
 });
 
 router.use(requireAuth);
@@ -94,84 +94,116 @@ router.get("/review-queue", async (req, res) => {
   }
 });
 
-router.post("/upload", upload.single("file"), async (req, res) => {
-  try {
-    const file = req.file;
-    if (!file) {
-      res.status(400).json({ error: "No file uploaded" });
-      return;
-    }
+async function processUploadedFile(file: Express.Multer.File): Promise<{
+  id: number;
+  filename: string;
+  status: string;
+  message: string;
+}> {
+  const fileType = getFileType(file.mimetype, file.originalname);
+  if (fileType === "unknown") {
+    throw new Error(`Unsupported file type for ${file.originalname}. Upload PDF, DOCX, or TXT.`);
+  }
 
-    const fileType = getFileType(file.mimetype, file.originalname);
-    if (fileType === "unknown") {
-      res.status(400).json({
-        error: "Unsupported file type. Upload PDF, DOCX, or TXT.",
-      });
-      return;
-    }
+  const rawText = await parseFile(file.buffer, file.mimetype, file.originalname);
 
-    const rawText = await parseFile(file.buffer, file.mimetype, file.originalname);
+  const [doc] = await db
+    .insert(documents)
+    .values({
+      filename: file.originalname,
+      fileType,
+      rawText,
+      status: "processing",
+    })
+    .returning();
 
-    const [doc] = await db
-      .insert(documents)
-      .values({
-        filename: file.originalname,
-        fileType,
-        rawText,
-        status: "processing",
-      })
-      .returning();
+  setImmediate(async () => {
+    try {
+      const tags = await autoTagDocument(rawText);
+      const newStatus =
+        tags.confidenceScore >= REVIEW_CONFIDENCE_THRESHOLD ? "approved" : "pending";
 
-    res.status(202).json({
-      id: doc.id,
-      filename: doc.filename,
-      status: doc.status,
-      message: "Document uploaded. AI tagging in progress.",
-    });
+      await db
+        .update(documents)
+        .set({
+          title: tags.title,
+          issuingAuthority: tags.issuingAuthority,
+          policyDomain: tags.policyDomain,
+          documentType: tags.documentType,
+          audience: tags.audience,
+          confidenceScore: tags.confidenceScore,
+          status: newStatus,
+          updatedAt: new Date(),
+        })
+        .where(eq(documents.id, doc.id));
 
-    setImmediate(async () => {
-      try {
-        const tags = await autoTagDocument(rawText);
-        const newStatus =
-          tags.confidenceScore >= REVIEW_CONFIDENCE_THRESHOLD ? "approved" : "pending";
-
-        await db
-          .update(documents)
-          .set({
-            title: tags.title,
-            issuingAuthority: tags.issuingAuthority,
-            policyDomain: tags.policyDomain,
-            documentType: tags.documentType,
-            audience: tags.audience,
-            confidenceScore: tags.confidenceScore,
-            status: newStatus,
-            updatedAt: new Date(),
-          })
-          .where(eq(documents.id, doc.id));
-
-        const chunks = chunkText(rawText);
-        if (chunks.length > 0) {
-          await db.insert(documentChunks).values(
-            chunks.map((content, idx) => ({
-              documentId: doc.id,
-              chunkIndex: idx,
-              content,
-            }))
-          );
-        }
-
-        logger.info(
-          { docId: doc.id, status: newStatus, confidence: tags.confidenceScore },
-          "Document tagged"
+      const chunks = chunkText(rawText);
+      if (chunks.length > 0) {
+        await db.insert(documentChunks).values(
+          chunks.map((content, idx) => ({
+            documentId: doc.id,
+            chunkIndex: idx,
+            content,
+          }))
         );
-      } catch (err) {
-        logger.error(err, "Error during AI tagging");
-        await db
-          .update(documents)
-          .set({ status: "pending", updatedAt: new Date() })
-          .where(eq(documents.id, doc.id));
       }
-    });
+
+      logger.info(
+        { docId: doc.id, status: newStatus, confidence: tags.confidenceScore },
+        "Document tagged"
+      );
+    } catch (err) {
+      logger.error(err, "Error during AI tagging");
+      await db
+        .update(documents)
+        .set({ status: "pending", updatedAt: new Date() })
+        .where(eq(documents.id, doc.id));
+    }
+  });
+
+  return {
+    id: doc.id,
+    filename: doc.filename,
+    status: doc.status,
+    message: "Document uploaded. AI tagging in progress.",
+  };
+}
+
+router.post("/upload", upload.array("files", 20), async (req, res) => {
+  try {
+    const uploadedFiles = req.files as Express.Multer.File[] | undefined;
+    if (!uploadedFiles || uploadedFiles.length === 0) {
+      res.status(400).json({ error: "No files uploaded. Send files under the 'files' field." });
+      return;
+    }
+    if (uploadedFiles.length > 20) {
+      res.status(400).json({ error: "Maximum 20 files per upload request." });
+      return;
+    }
+
+    const results: Array<{ id: number; filename: string; status: string; message: string }> = [];
+    const errors: Array<{ filename: string; error: string }> = [];
+
+    for (const file of uploadedFiles) {
+      try {
+        const result = await processUploadedFile(file);
+        results.push(result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Processing failed";
+        errors.push({ filename: file.originalname, error: message });
+      }
+    }
+
+    if (results.length === 0) {
+      res.status(400).json({ error: errors[0]?.error ?? "All files failed to upload", errors });
+      return;
+    }
+
+    if (results.length === 1 && errors.length === 0) {
+      res.status(202).json(results[0]);
+    } else {
+      res.status(202).json({ results, errors });
+    }
   } catch (err) {
     logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });

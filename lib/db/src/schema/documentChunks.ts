@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -19,6 +20,7 @@ export const documentChunks = pgTable(
       .references(() => documents.id, { onDelete: "cascade" }),
     chunkIndex: integer("chunk_index").notNull(),
     content: text("content").notNull(),
+    embedding: jsonb("embedding").$type<number[] | null>().default(null),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

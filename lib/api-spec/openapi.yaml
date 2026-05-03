@@ -72,26 +72,20 @@ paths:
     post:
       operationId: uploadDocument
       tags: [documents]
-      summary: Upload a policy document
+      summary: Upload one or more policy documents
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-              required:
-                - file
+              $ref: "#/components/schemas/UploadDocumentBody"
       responses:
-        "201":
-          description: Document uploaded and queued for processing
+        "202":
+          description: Document accepted and queued for AI processing
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Document"
+                $ref: "#/components/schemas/UploadDocumentResponse"
         "400":
           description: Bad request
           content:
@@ -103,7 +97,7 @@ paths:
     get:
       operationId: getReviewQueue
       tags: [documents]
-      summary: Get documents needing human review (low confidence)
+      summary: Get documents needing human review (confidence below threshold)
       responses:
         "200":
           description: Documents needing review
@@ -191,7 +185,7 @@ paths:
     get:
       operationId: listChatSessions
       tags: [chat]
-      summary: List all chat sessions
+      summary: List all chat sessions for the authenticated user
       responses:
         "200":
           description: List of chat sessions
@@ -283,10 +277,16 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ChatMessage"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
       operationId: sendChatMessage
       tags: [chat]
-      summary: Send a message and get AI response (SSE stream)
+      summary: Send a question and get a JSON AI response with citations
       parameters:
         - name: id
           in: path
@@ -301,9 +301,11 @@ paths:
               $ref: "#/components/schemas/SendChatMessageBody"
       responses:
         "200":
-          description: SSE stream of AI response with citations
+          description: AI assistant reply with citations
           content:
-            text/event-stream: {}
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessage"
         "404":
           description: Not found
           content:
@@ -394,6 +396,32 @@ components:
         - createdAt
         - updatedAt
 
+    UploadDocumentBody:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+      required:
+        - file
+
+    UploadDocumentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+      required:
+        - id
+        - filename
+        - status
+        - message
+
     UpdateDocumentBody:
       type: object
       properties:
@@ -415,23 +443,28 @@ components:
       properties:
         id:
           type: integer
+        userId:
+          type: string
         title:
           type: string
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
       required:
         - id
+        - userId
         - title
         - createdAt
+        - updatedAt
 
     CreateChatSessionBody:
       type: object
       properties:
         title:
           type: string
-      required:
-        - title
 
     ChatMessage:
       type: object
@@ -445,7 +478,9 @@ components:
         content:
           type: string
         citations:
-          type: ["string", "null"]
+          type: ["array", "null"]
+          items:
+            type: object
         createdAt:
           type: string
           format: date-time
@@ -459,19 +494,24 @@ components:
     SendChatMessageBody:
       type: object
       properties:
-        content:
+        question:
           type: string
       required:
-        - content
+        - question
 
     ChatSessionWithMessages:
       type: object
       properties:
         id:
           type: integer
+        userId:
+          type: string
         title:
           type: string
         createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
         messages:
@@ -480,29 +520,28 @@ components:
             $ref: "#/components/schemas/ChatMessage"
       required:
         - id
+        - userId
         - title
         - createdAt
+        - updatedAt
         - messages
 
     StatsSummary:
       type: object
       properties:
-        totalDocuments:
+        total:
           type: integer
-        processedDocuments:
+        approved:
           type: integer
-        pendingDocuments:
+        pending:
           type: integer
-        reviewQueueCount:
-          type: integer
-        totalChatSessions:
+        processing:
           type: integer
       required:
-        - totalDocuments
-        - processedDocuments
-        - pendingDocuments
-        - reviewQueueCount
-        - totalChatSessions
+        - total
+        - approved
+        - pending
+        - processing
 
     DomainStat:
       type: object

@@ -34,6 +34,17 @@ export interface Document {
   updatedAt: string;
 }
 
+export interface UploadDocumentBody {
+  file: Blob;
+}
+
+export interface UploadDocumentResponse {
+  id: number;
+  filename: string;
+  status: string;
+  message: string;
+}
+
 export interface UpdateDocumentBody {
   title?: string;
   issuingAuthority?: string;
@@ -45,13 +56,17 @@ export interface UpdateDocumentBody {
 
 export interface ChatSession {
   id: number;
+  userId: string;
   title: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateChatSessionBody {
-  title: string;
+  title?: string;
 }
+
+export type ChatMessageCitationsItem = { [key: string]: unknown };
 
 export interface ChatMessage {
   id: number;
@@ -59,27 +74,28 @@ export interface ChatMessage {
   role: string;
   content: string;
   /** @nullable */
-  citations?: string | null;
+  citations?: ChatMessageCitationsItem[] | null;
   createdAt: string;
 }
 
 export interface SendChatMessageBody {
-  content: string;
+  question: string;
 }
 
 export interface ChatSessionWithMessages {
   id: number;
+  userId: string;
   title: string;
   createdAt: string;
+  updatedAt: string;
   messages: ChatMessage[];
 }
 
 export interface StatsSummary {
-  totalDocuments: number;
-  processedDocuments: number;
-  pendingDocuments: number;
-  reviewQueueCount: number;
-  totalChatSessions: number;
+  total: number;
+  approved: number;
+  pending: number;
+  processing: number;
 }
 
 export interface DomainStat {
@@ -93,8 +109,4 @@ export type ListDocumentsParams = {
   audience?: string;
   status?: string;
   search?: string;
-};
-
-export type UploadDocumentBody = {
-  file: Blob;
 };

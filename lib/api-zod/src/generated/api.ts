@@ -43,14 +43,14 @@ export const ListDocumentsResponseItem = zod.object({
 export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
 
 /**
- * @summary Upload a policy document
+ * @summary Upload one or more policy documents
  */
 export const UploadDocumentBody = zod.object({
   file: zod.instanceof(File),
 });
 
 /**
- * @summary Get documents needing human review (low confidence)
+ * @summary Get documents needing human review (confidence below threshold)
  */
 export const GetReviewQueueResponseItem = zod.object({
   id: zod.number(),
@@ -129,12 +129,14 @@ export const DeleteDocumentParams = zod.object({
 });
 
 /**
- * @summary List all chat sessions
+ * @summary List all chat sessions for the authenticated user
  */
 export const ListChatSessionsResponseItem = zod.object({
   id: zod.number(),
+  userId: zod.string(),
   title: zod.string(),
   createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
 export const ListChatSessionsResponse = zod.array(ListChatSessionsResponseItem);
 
@@ -142,7 +144,7 @@ export const ListChatSessionsResponse = zod.array(ListChatSessionsResponseItem);
  * @summary Create a new chat session
  */
 export const CreateChatSessionBody = zod.object({
-  title: zod.string(),
+  title: zod.string().optional(),
 });
 
 /**
@@ -154,15 +156,17 @@ export const GetChatSessionParams = zod.object({
 
 export const GetChatSessionResponse = zod.object({
   id: zod.number(),
+  userId: zod.string(),
   title: zod.string(),
   createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
   messages: zod.array(
     zod.object({
       id: zod.number(),
       sessionId: zod.number(),
       role: zod.string(),
       content: zod.string(),
-      citations: zod.string().nullish(),
+      citations: zod.array(zod.object({}).passthrough()).nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
@@ -187,31 +191,39 @@ export const GetChatMessagesResponseItem = zod.object({
   sessionId: zod.number(),
   role: zod.string(),
   content: zod.string(),
-  citations: zod.string().nullish(),
+  citations: zod.array(zod.object({}).passthrough()).nullish(),
   createdAt: zod.coerce.date(),
 });
 export const GetChatMessagesResponse = zod.array(GetChatMessagesResponseItem);
 
 /**
- * @summary Send a message and get AI response (SSE stream)
+ * @summary Send a question and get a JSON AI response with citations
  */
 export const SendChatMessageParams = zod.object({
   id: zod.coerce.number(),
 });
 
 export const SendChatMessageBody = zod.object({
+  question: zod.string(),
+});
+
+export const SendChatMessageResponse = zod.object({
+  id: zod.number(),
+  sessionId: zod.number(),
+  role: zod.string(),
   content: zod.string(),
+  citations: zod.array(zod.object({}).passthrough()).nullish(),
+  createdAt: zod.coerce.date(),
 });
 
 /**
  * @summary Dashboard summary stats
  */
 export const GetStatsSummaryResponse = zod.object({
-  totalDocuments: zod.number(),
-  processedDocuments: zod.number(),
-  pendingDocuments: zod.number(),
-  reviewQueueCount: zod.number(),
-  totalChatSessions: zod.number(),
+  total: zod.number(),
+  approved: zod.number(),
+  pending: zod.number(),
+  processing: zod.number(),
 });
 
 /**
