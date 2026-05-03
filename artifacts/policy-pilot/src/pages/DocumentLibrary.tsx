@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,16 +12,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   FileText,
   Trash2,
   Search,
-  Filter,
   CheckCircle,
-  Clock,
   AlertCircle,
   Loader2,
+  Clock,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -71,12 +71,27 @@ function statusBadge(status: string) {
         Needs Review
       </Badge>
     );
+  if (status === "rejected")
+    return (
+      <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+        <AlertCircle className="w-3 h-3 mr-1" />
+        Rejected
+      </Badge>
+    );
   return (
     <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
       <Loader2 className="w-3 h-3 mr-1 animate-spin" />
       Processing
     </Badge>
   );
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-AU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function DocumentLibrary() {
@@ -87,6 +102,9 @@ export default function DocumentLibrary() {
   const [status, setStatus] = useState("all");
   const { toast } = useToast();
   const qc = useQueryClient();
+  const searchString = useSearch();
+  const highlightId = new URLSearchParams(searchString).get("highlight");
+  const highlightRef = useRef<HTMLDivElement | null>(null);
 
   const params = new URLSearchParams();
   if (search) params.set("search", search);
@@ -97,19 +115,25 @@ export default function DocumentLibrary() {
 
   const { data: docs = [], isLoading } = useQuery<Document[]>({
     queryKey: ["documents", search, domain, docType, audience, status],
-    queryFn: () =>
-      apiFetch(`/documents?${params.toString()}`),
+    queryFn: () => apiFetch(`/documents?${params.toString()}`),
     refetchInterval: 5000,
   });
 
+  useEffect(() => {
+    if (highlightId && highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, docs]);
+
   const deleteMut = useMutation({
     mutationFn: (id: number) =>
-      apiFetch(`/documents/${id}`, { method: "DELETE" }),
+      apiFetch<void>(`/documents/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["documents"] });
       toast({ title: "Document deleted" });
     },
-    onError: (e: Error) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) =>
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -195,64 +219,84 @@ export default function DocumentLibrary() {
         </div>
       ) : (
         <div className="space-y-3">
-          {docs.map((doc) => (
-            <Card key={doc.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <FileText className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900 truncate">
-                        {doc.title ?? doc.filename}
-                      </p>
-                      {doc.title && (
-                        <p className="text-xs text-slate-400 truncate">{doc.filename}</p>
-                      )}
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {statusBadge(doc.status)}
-                        {doc.policyDomain && (
-                          <Badge variant="outline" className="text-xs">
-                            {doc.policyDomain}
-                          </Badge>
-                        )}
-                        {doc.documentType && (
-                          <Badge variant="outline" className="text-xs">
-                            {doc.documentType}
-                          </Badge>
-                        )}
-                        {doc.audience && (
-                          <Badge variant="outline" className="text-xs">
-                            {doc.audience}
-                          </Badge>
-                        )}
-                        {doc.issuingAuthority && (
-                          <span className="text-xs text-slate-500">
-                            {doc.issuingAuthority}
+          {docs.map((doc) => {
+            const isHighlighted = highlightId === String(doc.id);
+            return (
+              <div
+                key={doc.id}
+                ref={isHighlighted ? highlightRef : null}
+              >
+                <Card
+                  className={`hover:shadow-md transition-all ${
+                    isHighlighted
+                      ? "ring-2 ring-blue-400 shadow-md bg-blue-50"
+                      : ""
+                  }`}
+                >
+                  <CardContent className="py-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <FileText className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 truncate">
+                            {doc.title ?? doc.filename}
+                          </p>
+                          {doc.title && (
+                            <p className="text-xs text-slate-400 truncate">{doc.filename}</p>
+                          )}
+                          <div className="flex flex-wrap gap-2 mt-2 items-center">
+                            {statusBadge(doc.status)}
+                            {doc.policyDomain && (
+                              <Badge variant="outline" className="text-xs">
+                                {doc.policyDomain}
+                              </Badge>
+                            )}
+                            {doc.documentType && (
+                              <Badge variant="outline" className="text-xs">
+                                {doc.documentType}
+                              </Badge>
+                            )}
+                            {doc.audience && (
+                              <Badge variant="outline" className="text-xs">
+                                {doc.audience}
+                              </Badge>
+                            )}
+                            {doc.issuingAuthority && (
+                              <span className="text-xs text-slate-500">
+                                {doc.issuingAuthority}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-1.5">
+                            <Clock className="w-3 h-3 text-slate-300" />
+                            <span className="text-xs text-slate-400">
+                              Uploaded {formatDate(doc.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {doc.confidenceScore != null && (
+                          <span className="text-xs text-slate-400">
+                            {Math.round(doc.confidenceScore * 100)}% confidence
                           </span>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-slate-400 hover:text-red-500"
+                          onClick={() => deleteMut.mutate(doc.id)}
+                          disabled={deleteMut.isPending}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {doc.confidenceScore != null && (
-                      <span className="text-xs text-slate-400">
-                        {Math.round(doc.confidenceScore * 100)}% confidence
-                      </span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-slate-400 hover:text-red-500"
-                      onClick={() => deleteMut.mutate(doc.id)}
-                      disabled={deleteMut.isPending}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -5,9 +5,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   ClerkProvider,
   SignIn,
-  RedirectToSignIn,
   UserButton,
   useAuth,
+  useUser,
 } from "@clerk/react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
@@ -44,6 +44,13 @@ const NAV_ITEMS = [
 
 function Sidebar() {
   const [location] = useLocation();
+  const { user } = useUser();
+
+  const displayName =
+    user?.fullName ??
+    user?.primaryEmailAddress?.emailAddress?.split("@")[0] ??
+    "Account";
+
   return (
     <aside className="w-56 shrink-0 bg-slate-900 min-h-screen flex flex-col">
       <div className="px-5 py-5 border-b border-slate-800">
@@ -80,7 +87,7 @@ function Sidebar() {
       </nav>
 
       <div className="px-4 py-4 border-t border-slate-800">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <UserButton
             appearance={{
               elements: {
@@ -88,7 +95,9 @@ function Sidebar() {
               },
             }}
           />
-          <span className="text-slate-400 text-xs">Account</span>
+          <span className="text-slate-300 text-xs truncate" title={displayName}>
+            {displayName}
+          </span>
         </div>
       </div>
     </aside>
