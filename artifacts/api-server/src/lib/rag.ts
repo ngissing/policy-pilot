@@ -4,6 +4,19 @@ import { documentChunks, documents } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { cosineSimilarity, computeEmbedding } from "./embeddings.js";
 
+const DEPT_KEYWORDS = [
+  "department", "ministry", "government", "board of education",
+  "authority", "directorate", "commission", "nsw education",
+  "vic education", "qld education", "sa education", "wa education",
+  "tas education", "nt education", "act education",
+];
+
+function isDepartmentPolicy(authority: string | null | undefined): boolean {
+  if (!authority) return false;
+  const lower = authority.toLowerCase();
+  return DEPT_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 export interface Citation {
   documentId: number;
   title: string | null;
@@ -21,6 +34,8 @@ export interface RagOptions {
   responseTone?: "formal" | "friendly";
   maxSources?: number;
   fallbackMessage?: string;
+  scopeFilter?: "all" | "school" | "department";
+  domainFilter?: string;
 }
 
 const DEFAULT_FALLBACK =
@@ -110,6 +125,8 @@ export async function ragChat(
     responseTone = "formal",
     maxSources = 5,
     fallbackMessage = DEFAULT_FALLBACK,
+    scopeFilter = "all",
+    domainFilter = "all",
   } = options;
 
   const queryEmbedding = await computeEmbedding(question);
@@ -122,11 +139,21 @@ export async function ragChat(
       documentId: documentChunks.documentId,
       filename: documents.filename,
       title: documents.title,
+      issuingAuthority: documents.issuingAuthority,
+      policyDomain: documents.policyDomain,
     })
     .from(documentChunks)
     .innerJoin(documents, sql`${documentChunks.documentId} = ${documents.id}`);
 
-  const scored = allChunks
+  // Apply scope + domain filters before scoring
+  const filteredChunks = allChunks.filter((c) => {
+    if (scopeFilter === "department" && !isDepartmentPolicy(c.issuingAuthority)) return false;
+    if (scopeFilter === "school" && isDepartmentPolicy(c.issuingAuthority)) return false;
+    if (domainFilter && domainFilter !== "all" && c.policyDomain !== domainFilter) return false;
+    return true;
+  });
+
+  const scored = filteredChunks
     .map((chunk) => ({
       ...chunk,
       score:

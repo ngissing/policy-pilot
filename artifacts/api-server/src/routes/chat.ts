@@ -192,10 +192,17 @@ router.post("/sessions/:id/messages", async (req, res) => {
       .orderBy(chatMessages.createdAt);
 
     const ragOptions = await loadRagOptions();
+
+    const scopeFilter = typeof req.body?.scopeFilter === "string" &&
+      ["all", "school", "department"].includes(req.body.scopeFilter)
+      ? (req.body.scopeFilter as "all" | "school" | "department")
+      : "all";
+    const domainFilter = typeof req.body?.domainFilter === "string" ? req.body.domainFilter : "all";
+
     const { answer, citations } = await ragChat(
       question,
       history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-      ragOptions
+      { ...ragOptions, scopeFilter, domainFilter }
     );
 
     const [assistantMsg] = await db

@@ -47,7 +47,7 @@ const NAV_ITEMS = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/library", label: "Policy Library", icon: BookOpen },
   { path: "/upload", label: "Upload", icon: Upload },
-  { path: "/chat", label: "AI Chat", icon: MessageSquare },
+  { path: "/chat", label: "Chat", icon: MessageSquare },
   { path: "/review", label: "Review Queue", icon: ClipboardCheck },
   { path: "/scrape", label: "Web Scraper", icon: Globe },
   { path: "/settings", label: "Settings", icon: Settings },
