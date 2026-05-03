@@ -3,17 +3,22 @@ import { db } from "@workspace/db";
 import { documents } from "@workspace/db";
 import { sql, count } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { requireAuth } from "../middlewares/requireAuth.js";
 
 const router = Router();
 
-router.get("/summary", async (req, res) => {
+router.use(requireAuth);
+
+router.get("/summary", async (_req, res) => {
   try {
-    const [totals] = await db.select({
-      total: count(),
-      approved: sql<number>`cast(sum(case when ${documents.status} = 'approved' then 1 else 0 end) as int)`,
-      pending: sql<number>`cast(sum(case when ${documents.status} = 'pending' then 1 else 0 end) as int)`,
-      processing: sql<number>`cast(sum(case when ${documents.status} = 'processing' then 1 else 0 end) as int)`,
-    }).from(documents);
+    const [totals] = await db
+      .select({
+        total: count(),
+        approved: sql<number>`cast(sum(case when ${documents.status} = 'approved' then 1 else 0 end) as int)`,
+        pending: sql<number>`cast(sum(case when ${documents.status} = 'pending' then 1 else 0 end) as int)`,
+        processing: sql<number>`cast(sum(case when ${documents.status} = 'processing' then 1 else 0 end) as int)`,
+      })
+      .from(documents);
 
     res.json({
       total: totals.total ?? 0,
@@ -27,14 +32,17 @@ router.get("/summary", async (req, res) => {
   }
 });
 
-router.get("/by-domain", async (req, res) => {
+router.get("/by-domain", async (_req, res) => {
   try {
-    const rows = await db.select({
-      domain: documents.policyDomain,
-      count: count(),
-    }).from(documents).groupBy(documents.policyDomain);
+    const rows = await db
+      .select({
+        domain: documents.policyDomain,
+        count: count(),
+      })
+      .from(documents)
+      .groupBy(documents.policyDomain);
 
-    const result = rows.map(r => ({
+    const result = rows.map((r) => ({
       domain: r.domain ?? "uncategorized",
       count: r.count,
     }));

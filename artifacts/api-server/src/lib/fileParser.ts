@@ -1,4 +1,5 @@
 import mammoth from "mammoth";
+import pdfParse from "pdf-parse";
 
 export async function parseFile(
   buffer: Buffer,
@@ -9,8 +10,7 @@ export async function parseFile(
     mimeType === "application/pdf" ||
     filename.toLowerCase().endsWith(".pdf")
   ) {
-    const pdfParse = await import("pdf-parse");
-    const data = await pdfParse.default(buffer);
+    const data = await pdfParse(buffer);
     return data.text;
   }
 

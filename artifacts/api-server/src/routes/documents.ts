@@ -2,43 +2,58 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { documents, documentChunks } from "@workspace/db";
-import { eq, and, like, ilike, or, lte, desc } from "drizzle-orm";
+import { eq, or, like, lt, desc } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
 import { logger } from "../lib/logger.js";
+import { requireAuth } from "../middlewares/requireAuth.js";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+router.use(requireAuth);
 
 router.get("/", async (req, res) => {
   try {
-    const { domain, documentType, audience, status, search } = req.query as Record<string, string>;
+    const query = req.query;
+    const domain = typeof query.domain === "string" ? query.domain : undefined;
+    const documentType = typeof query.documentType === "string" ? query.documentType : undefined;
+    const audience = typeof query.audience === "string" ? query.audience : undefined;
+    const status = typeof query.status === "string" ? query.status : undefined;
+    const search = typeof query.search === "string" ? query.search : undefined;
 
-    let rows = await db.select({
-      id: documents.id,
-      filename: documents.filename,
-      title: documents.title,
-      fileType: documents.fileType,
-      issuingAuthority: documents.issuingAuthority,
-      policyDomain: documents.policyDomain,
-      documentType: documents.documentType,
-      audience: documents.audience,
-      confidenceScore: documents.confidenceScore,
-      status: documents.status,
-      createdAt: documents.createdAt,
-      updatedAt: documents.updatedAt,
-    }).from(documents).orderBy(desc(documents.createdAt));
+    let rows = await db
+      .select({
+        id: documents.id,
+        filename: documents.filename,
+        title: documents.title,
+        fileType: documents.fileType,
+        issuingAuthority: documents.issuingAuthority,
+        policyDomain: documents.policyDomain,
+        documentType: documents.documentType,
+        audience: documents.audience,
+        confidenceScore: documents.confidenceScore,
+        status: documents.status,
+        createdAt: documents.createdAt,
+        updatedAt: documents.updatedAt,
+      })
+      .from(documents)
+      .orderBy(desc(documents.createdAt));
 
-    if (domain) rows = rows.filter(r => r.policyDomain === domain);
-    if (documentType) rows = rows.filter(r => r.documentType === documentType);
-    if (audience) rows = rows.filter(r => r.audience === audience);
-    if (status) rows = rows.filter(r => r.status === status);
+    if (domain) rows = rows.filter((r) => r.policyDomain === domain);
+    if (documentType) rows = rows.filter((r) => r.documentType === documentType);
+    if (audience) rows = rows.filter((r) => r.audience === audience);
+    if (status) rows = rows.filter((r) => r.status === status);
     if (search) {
       const q = search.toLowerCase();
-      rows = rows.filter(r =>
-        r.filename.toLowerCase().includes(q) ||
-        (r.title ?? "").toLowerCase().includes(q) ||
-        (r.issuingAuthority ?? "").toLowerCase().includes(q)
+      rows = rows.filter(
+        (r) =>
+          r.filename.toLowerCase().includes(q) ||
+          (r.title ?? "").toLowerCase().includes(q) ||
+          (r.issuingAuthority ?? "").toLowerCase().includes(q)
       );
     }
 
@@ -48,6 +63,8 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to list documents" });
   }
 });
+
+const REVIEW_CONFIDENCE_THRESHOLD = 0.75;
 
 router.get("/review-queue", async (req, res) => {
   try {
@@ -67,7 +84,7 @@ router.get("/review-queue", async (req, res) => {
         updatedAt: documents.updatedAt,
       })
       .from(documents)
-      .where(eq(documents.status, "pending"))
+      .where(lt(documents.confidenceScore, REVIEW_CONFIDENCE_THRESHOLD))
       .orderBy(desc(documents.createdAt));
 
     res.json(rows);
@@ -87,18 +104,23 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
     const fileType = getFileType(file.mimetype, file.originalname);
     if (fileType === "unknown") {
-      res.status(400).json({ error: "Unsupported file type. Upload PDF, DOCX, or TXT." });
+      res.status(400).json({
+        error: "Unsupported file type. Upload PDF, DOCX, or TXT.",
+      });
       return;
     }
 
     const rawText = await parseFile(file.buffer, file.mimetype, file.originalname);
 
-    const [doc] = await db.insert(documents).values({
-      filename: file.originalname,
-      fileType,
-      rawText,
-      status: "processing",
-    }).returning();
+    const [doc] = await db
+      .insert(documents)
+      .values({
+        filename: file.originalname,
+        fileType,
+        rawText,
+        status: "processing",
+      })
+      .returning();
 
     res.status(202).json({
       id: doc.id,
@@ -110,18 +132,22 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     setImmediate(async () => {
       try {
         const tags = await autoTagDocument(rawText);
-        const status = tags.confidenceScore >= 0.7 ? "approved" : "pending";
+        const newStatus =
+          tags.confidenceScore >= REVIEW_CONFIDENCE_THRESHOLD ? "approved" : "pending";
 
-        await db.update(documents).set({
-          title: tags.title,
-          issuingAuthority: tags.issuingAuthority,
-          policyDomain: tags.policyDomain,
-          documentType: tags.documentType,
-          audience: tags.audience,
-          confidenceScore: tags.confidenceScore,
-          status,
-          updatedAt: new Date(),
-        }).where(eq(documents.id, doc.id));
+        await db
+          .update(documents)
+          .set({
+            title: tags.title,
+            issuingAuthority: tags.issuingAuthority,
+            policyDomain: tags.policyDomain,
+            documentType: tags.documentType,
+            audience: tags.audience,
+            confidenceScore: tags.confidenceScore,
+            status: newStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(documents.id, doc.id));
 
         const chunks = chunkText(rawText);
         if (chunks.length > 0) {
@@ -134,21 +160,31 @@ router.post("/upload", upload.single("file"), async (req, res) => {
           );
         }
 
-        logger.info({ docId: doc.id, status, confidence: tags.confidenceScore }, "Document tagged");
+        logger.info(
+          { docId: doc.id, status: newStatus, confidence: tags.confidenceScore },
+          "Document tagged"
+        );
       } catch (err) {
         logger.error(err, "Error during AI tagging");
-        await db.update(documents).set({ status: "pending", updatedAt: new Date() }).where(eq(documents.id, doc.id));
+        await db
+          .update(documents)
+          .set({ status: "pending", updatedAt: new Date() })
+          .where(eq(documents.id, doc.id));
       }
     });
   } catch (err) {
-    logger.error(err, "Error uploading document");
+    logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });
   }
 });
 
 router.get("/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid document id" });
+      return;
+    }
     const [doc] = await db.select().from(documents).where(eq(documents.id, id));
     if (!doc) {
       res.status(404).json({ error: "Document not found" });
@@ -164,18 +200,34 @@ router.get("/:id", async (req, res) => {
 
 router.patch("/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
-    const { title, issuingAuthority, policyDomain, documentType, audience, status } = req.body;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid document id" });
+      return;
+    }
+    const body: Record<string, unknown> = typeof req.body === "object" && req.body !== null ? req.body : {};
 
-    const [doc] = await db.update(documents).set({
-      ...(title !== undefined && { title }),
-      ...(issuingAuthority !== undefined && { issuingAuthority }),
-      ...(policyDomain !== undefined && { policyDomain }),
-      ...(documentType !== undefined && { documentType }),
-      ...(audience !== undefined && { audience }),
-      ...(status !== undefined && { status }),
-      updatedAt: new Date(),
-    }).where(eq(documents.id, id)).returning();
+    const allowedFields = [
+      "title",
+      "issuingAuthority",
+      "policyDomain",
+      "documentType",
+      "audience",
+      "status",
+    ] as const;
+
+    const updates: Partial<typeof documents.$inferInsert> = {};
+    for (const field of allowedFields) {
+      if (field in body && (typeof body[field] === "string" || body[field] === null)) {
+        (updates as Record<string, unknown>)[field] = body[field];
+      }
+    }
+
+    const [doc] = await db
+      .update(documents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(documents.id, id))
+      .returning();
 
     if (!doc) {
       res.status(404).json({ error: "Document not found" });
@@ -191,7 +243,11 @@ router.patch("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid document id" });
+      return;
+    }
     await db.delete(documents).where(eq(documents.id, id));
     res.status(204).send();
   } catch (err) {
