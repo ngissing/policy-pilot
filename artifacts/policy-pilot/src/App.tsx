@@ -11,6 +11,7 @@ import {
   useUser,
 } from "@clerk/react";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
+import { setApiTokenGetter } from "@/lib/api";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import DocumentLibrary from "@/pages/DocumentLibrary";
@@ -131,9 +132,12 @@ function ClerkTokenSync() {
   useEffect(() => {
     if (!isSignedIn) {
       setAuthTokenGetter(null);
+      setApiTokenGetter(null);
       return;
     }
-    setAuthTokenGetter(() => getToken());
+    const getter = () => getToken();
+    setAuthTokenGetter(getter);
+    setApiTokenGetter(getter);
   }, [isSignedIn, getToken]);
   return null;
 }

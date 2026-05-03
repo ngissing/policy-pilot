@@ -1,36 +1,34 @@
+type TokenGetter = () => Promise<string | null> | string | null;
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export const API_BASE = `${BASE}/api`;
 
-interface ApiErrorResponse {
-  error?: string;
+let _tokenGetter: TokenGetter | null = null;
+
+export function setApiTokenGetter(getter: TokenGetter | null) {
+  _tokenGetter = getter;
 }
 
-let _authToken: string | null = null;
-
-export function setAuthToken(token: string | null) {
-  _authToken = token;
+async function authHeaders(): Promise<Record<string, string>> {
+  if (!_tokenGetter) return {};
+  const token = await _tokenGetter();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function authHeaders(): Record<string, string> {
-  return _authToken ? { Authorization: `Bearer ${_authToken}` } : {};
-}
-
-export async function apiFetch<T>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders(),
+      ...auth,
       ...(options?.headers ?? {}),
     },
   });
   if (!res.ok) {
-    const body: ApiErrorResponse = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error ?? res.statusText);
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((body as { error?: string }).error ?? res.statusText);
   }
   if (res.status === 204 || res.headers.get("Content-Length") === "0") {
     return undefined as unknown as T;
@@ -39,14 +37,15 @@ export async function apiFetch<T>(
 }
 
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: auth,
     body: formData,
   });
   if (!res.ok) {
-    const body: ApiErrorResponse = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error ?? res.statusText);
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((body as { error?: string }).error ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
