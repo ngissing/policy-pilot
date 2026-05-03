@@ -5,7 +5,7 @@ import { documents, documentChunks } from "@workspace/db";
 import { eq, lt, desc } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
-import { computeEmbedding } from "../lib/tfidf.js";
+import { computeEmbedding } from "../lib/embeddings.js";
 import { logger } from "../lib/logger.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
 

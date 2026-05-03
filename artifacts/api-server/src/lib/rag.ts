@@ -2,7 +2,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import { documentChunks, documents } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { cosineSimilarity, computeEmbedding } from "./tfidf.js";
+import { cosineSimilarity, computeEmbedding } from "./embeddings.js";
 
 export interface Citation {
   documentId: number;
