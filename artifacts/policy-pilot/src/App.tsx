@@ -5,7 +5,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   ClerkProvider,
-  SignIn,
   UserButton,
   useAuth,
   useUser,
@@ -20,6 +19,7 @@ import ChatPage from "@/pages/ChatPage";
 import AdminQueue from "@/pages/AdminQueue";
 import SettingsPage from "@/pages/SettingsPage";
 import ScrapePage from "@/pages/ScrapePage";
+import LandingPage from "@/pages/LandingPage";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -162,20 +162,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!isSignedIn) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-blue-500 flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold text-white">PolicyPilot</h1>
-            <p className="text-blue-200 mt-2">AI-powered school policy intelligence</p>
-          </div>
-          <SignIn routing="hash" />
-        </div>
-      </div>
-    );
+    return <LandingPage onSignIn={() => {}} />;
   }
 
   return <>{children}</>;
