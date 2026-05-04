@@ -1,10 +1,11 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { documents, documentChunks } from "@workspace/db";
+import { documents, documentChunks, wikiPages } from "@workspace/db";
 import { and, eq, isNull, lt, or, desc } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
+import { upsertWikiPage } from "../lib/wiki.js";
 import { computeEmbedding } from "../lib/embeddings.js";
 import { logger } from "../lib/logger.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
@@ -97,8 +98,6 @@ router.get("/review-queue", async (req, res) => {
       )
       .orderBy(desc(documents.createdAt));
 
-    // add sourceUrl to review queue response
-
     res.json(rows);
   } catch (err) {
     logger.error(err, "Error fetching review queue");
@@ -131,7 +130,11 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
 
   setImmediate(async () => {
     try {
-      const tags = await autoTagDocument(rawText);
+      // Auto-tag and wiki generation in parallel
+      const [tags] = await Promise.all([
+        autoTagDocument(rawText),
+      ]);
+
       const newStatus =
         tags.confidenceScore >= REVIEW_CONFIDENCE_THRESHOLD ? "approved" : "pending";
 
@@ -149,18 +152,28 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
         })
         .where(eq(documents.id, doc.id));
 
+      // Chunk + embed + wiki in parallel
       const chunks = chunkText(rawText);
-      if (chunks.length > 0) {
-        const embeddings = await Promise.all(chunks.map((c) => computeEmbedding(c)));
-        await db.insert(documentChunks).values(
-          chunks.map((content, idx) => ({
-            documentId: doc.id,
-            chunkIndex: idx,
-            content,
-            embedding: embeddings[idx],
-          }))
-        );
-      }
+      await Promise.all([
+        // Chunk embeddings
+        (async () => {
+          if (chunks.length > 0) {
+            const embeddings = await Promise.all(chunks.map((c) => computeEmbedding(c)));
+            await db.insert(documentChunks).values(
+              chunks.map((content, idx) => ({
+                documentId: doc.id,
+                chunkIndex: idx,
+                content,
+                embedding: embeddings[idx],
+              }))
+            );
+          }
+        })(),
+        // Wiki page generation
+        upsertWikiPage(doc.id, rawText).catch((err) => {
+          logger.warn({ err, docId: doc.id }, "Wiki generation failed (non-fatal)");
+        }),
+      ]);
 
       logger.info(
         { docId: doc.id, status: newStatus, confidence: tags.confidenceScore, chunks: chunks.length },
@@ -179,7 +192,7 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
     id: doc.id,
     filename: doc.filename,
     status: doc.status,
-    message: "Document uploaded. AI tagging and indexing in progress.",
+    message: "Document uploaded. AI tagging and wiki generation in progress.",
   };
 }
 
@@ -213,6 +226,86 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
   } catch (err) {
     logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+// GET /api/documents/:id/wiki — return the wiki page for a document
+router.get("/:id/wiki", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid document id" }); return; }
+
+    const [wiki] = await db
+      .select()
+      .from(wikiPages)
+      .where(eq(wikiPages.documentId, id));
+
+    if (!wiki) {
+      res.status(404).json({ error: "Wiki page not found. The document may still be processing." });
+      return;
+    }
+
+    const { embedding: _emb, ...rest } = wiki;
+    res.json(rest);
+  } catch (err) {
+    logger.error(err, "Error fetching wiki page");
+    res.status(500).json({ error: "Failed to fetch wiki page" });
+  }
+});
+
+// POST /api/documents/:id/reprocess — regenerate wiki + chunks for a document
+router.post("/:id/reprocess", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) { res.status(400).json({ error: "Invalid document id" }); return; }
+
+    const [doc] = await db
+      .select({ id: documents.id, rawText: documents.rawText, status: documents.status })
+      .from(documents)
+      .where(eq(documents.id, id));
+
+    if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+    if (!doc.rawText) { res.status(400).json({ error: "No raw text available to reprocess" }); return; }
+
+    // Mark as processing
+    await db.update(documents).set({ status: "processing", updatedAt: new Date() }).where(eq(documents.id, id));
+
+    res.status(202).json({ message: "Reprocessing started" });
+
+    setImmediate(async () => {
+      try {
+        const rawText = doc.rawText!;
+        // Delete old chunks and regenerate
+        await db.delete(documentChunks).where(eq(documentChunks.documentId, id));
+
+        const chunks = chunkText(rawText);
+        await Promise.all([
+          (async () => {
+            if (chunks.length > 0) {
+              const embeddings = await Promise.all(chunks.map((c) => computeEmbedding(c)));
+              await db.insert(documentChunks).values(
+                chunks.map((content, idx) => ({
+                  documentId: id,
+                  chunkIndex: idx,
+                  content,
+                  embedding: embeddings[idx],
+                }))
+              );
+            }
+          })(),
+          upsertWikiPage(id, rawText),
+        ]);
+
+        await db.update(documents).set({ status: "approved", updatedAt: new Date() }).where(eq(documents.id, id));
+        logger.info({ docId: id }, "Document reprocessed");
+      } catch (err) {
+        logger.error(err, "Error during reprocessing");
+        await db.update(documents).set({ status: "pending", updatedAt: new Date() }).where(eq(documents.id, id));
+      }
+    });
+  } catch (err) {
+    logger.error(err, "Error starting reprocess");
+    res.status(500).json({ error: "Failed to start reprocessing" });
   }
 });
 

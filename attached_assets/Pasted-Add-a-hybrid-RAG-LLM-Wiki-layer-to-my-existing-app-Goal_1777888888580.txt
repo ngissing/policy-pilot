@@ -1,0 +1,146 @@
+Add a hybrid RAG + LLM Wiki layer to my existing app.
+
+Goal:
+Users upload policy documents, then chat with them. The app should use both:
+1. RAG for accurate source-grounded answers from the original documents.
+2. An LLM Wiki layer that converts uploaded documents into structured markdown knowledge pages for faster, clearer answers.
+
+Architecture:
+- Keep raw uploaded documents.
+- Extract document text.
+- Chunk text for RAG.
+- Generate embeddings for chunks.
+- Store chunks in a vector database.
+- Also generate structured wiki pages from each uploaded policy.
+- During chat, search both the wiki layer and raw document chunks.
+- Prefer wiki results for structure, but always use RAG chunks as source-grounding.
+- Answers should cite the original document, section/page/chunk where possible.
+
+Database changes:
+Create or update these tables:
+
+documents:
+- id
+- user_id
+- filename
+- file_url
+- file_type
+- uploaded_at
+- status
+
+document_chunks:
+- id
+- document_id
+- user_id
+- chunk_text
+- chunk_index
+- page_number
+- section_heading
+- embedding
+- metadata
+- created_at
+
+wiki_pages:
+- id
+- document_id
+- user_id
+- title
+- slug
+- markdown_content
+- summary
+- related_topics
+- embedding
+- created_at
+- updated_at
+
+chat_sessions:
+- id
+- user_id
+- created_at
+
+chat_messages:
+- id
+- session_id
+- role
+- content
+- sources
+- created_at
+
+Upload pipeline:
+When a user uploads a document:
+1. Save the file.
+2. Extract text from PDF/DOCX/TXT.
+3. Split text into semantically meaningful chunks of around 700–1000 tokens with overlap.
+4. Generate embeddings for each chunk.
+5. Store chunks in document_chunks.
+6. Generate one or more wiki pages using the LLM.
+7. Embed each wiki page and store it in wiki_pages.
+8. Mark document status as processed.
+
+Wiki generation prompt:
+Convert this policy document into a structured internal wiki page.
+
+Requirements:
+- Use clear markdown.
+- Preserve factual meaning.
+- Do not invent rules.
+- Include headings such as:
+  - Overview
+  - Purpose
+  - Scope
+  - Key Responsibilities
+  - Procedures
+  - Important Definitions
+  - Related Policies
+  - Common Questions
+  - Source Notes
+- Include exact references to document sections/page numbers when available.
+- If information is unclear, say “Not specified in the source document.”
+- Keep the wiki useful for future retrieval and chat.
+
+Chat retrieval flow:
+When the user asks a question:
+1. Embed the user query.
+2. Search wiki_pages for relevant structured knowledge.
+3. Search document_chunks for source-grounding.
+4. Combine the best wiki results and document chunks.
+5. Ask the LLM to answer using both sources.
+6. The answer must:
+   - be concise and practical
+   - cite source document names
+   - mention page/section/chunk if available
+   - distinguish between confirmed policy text and interpretation
+   - say when the documents do not contain enough information
+
+Chat system prompt:
+You are an assistant helping users understand uploaded policy documents.
+
+Use the provided wiki context for structure and the raw document chunks for evidence.
+
+Rules:
+- Do not make up policy details.
+- If the answer is not supported by the documents, say so.
+- Prefer clear, practical explanations.
+- Cite sources.
+- If policies conflict, identify the conflict and cite both sources.
+- If the user asks for a summary, use the wiki layer.
+- If the user asks for exact wording, quote or closely reference the raw document chunks.
+- If the user asks for compliance/action steps, provide steps but make clear they are based only on the uploaded documents.
+
+Implementation notes:
+- If using Supabase, use Postgres + pgvector for embeddings.
+- Use row-level security so users can only access their own documents, chunks, wiki pages, and chats.
+- Add a document processing status indicator in the UI.
+- Add a “View Wiki” button for each uploaded document.
+- Add a “Sources used” section under each chat response.
+- Add a reprocess button to regenerate chunks/wiki pages if a document changes.
+
+Expected user flow:
+1. User uploads a policy document.
+2. App shows “Processing document…”
+3. App creates RAG chunks and wiki pages.
+4. User can open the generated wiki summary.
+5. User asks questions in chat.
+6. Chat answers using both the wiki and original document chunks with citations.
+
+Please inspect my existing codebase first, then implement this in the smallest clean set of changes. Preserve my existing UI and authentication where possible.

@@ -29,9 +29,11 @@ import {
   ExternalLink,
   Download,
   Globe,
+  BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiBlob } from "@/lib/api";
+import { useLocation } from "wouter";
 
 const DOMAINS = [
   "all",
@@ -96,6 +98,7 @@ export default function DocumentLibrary() {
   const [status, setStatus] = useState("all");
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [, navigate] = useLocation();
   const searchString = useSearch();
   const highlightId = new URLSearchParams(searchString).get("highlight");
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -285,6 +288,15 @@ export default function DocumentLibrary() {
                             {Math.round(doc.confidenceScore * 100)}% confidence
                           </span>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-slate-400 hover:text-violet-600"
+                          title="View wiki page"
+                          onClick={() => navigate(`/wiki/${doc.id}`)}
+                        >
+                          <BookOpen className="w-4 h-4" />
+                        </Button>
                         {doc.sourceUrl ? (
                           <Button
                             variant="ghost"

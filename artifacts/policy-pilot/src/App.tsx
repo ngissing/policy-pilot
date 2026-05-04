@@ -20,6 +20,7 @@ import AdminQueue from "@/pages/AdminQueue";
 import SettingsPage from "@/pages/SettingsPage";
 import ScrapePage from "@/pages/ScrapePage";
 import LandingPage from "@/pages/LandingPage";
+import WikiPage from "@/pages/WikiPage";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -128,6 +129,7 @@ function AppShell() {
           <Route path="/review" component={AdminQueue} />
           <Route path="/scrape" component={ScrapePage} />
           <Route path="/settings" component={SettingsPage} />
+          <Route path="/wiki/:id" component={WikiPage} />
           <Route component={NotFound} />
         </Switch>
       </main>

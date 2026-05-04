@@ -1,6 +1,6 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, pool } from "@workspace/db";
-import { documentChunks, documents } from "@workspace/db";
+import { documentChunks, documents, wikiPages } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { computeEmbedding } from "./embeddings.js";
 
@@ -22,6 +22,8 @@ export interface Citation {
   title: string | null;
   filename: string;
   excerpt: string;
+  sourceType?: "wiki" | "chunk";
+  wikiSection?: string;
 }
 
 export interface RagResult {
@@ -42,6 +44,7 @@ const DEFAULT_FALLBACK =
   "I couldn't find a policy that covers this — consider uploading relevant documents.";
 
 const SIMILARITY_THRESHOLD = 0.3;
+const WIKI_SIMILARITY_THRESHOLD = 0.25;
 
 export async function autoTagDocument(text: string): Promise<{
   title: string | null;
@@ -132,52 +135,81 @@ export async function ragChat(
   const queryEmbedding = await computeEmbedding(question);
   const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-  // Fetch more candidates than needed so scope/domain JS filters still yield enough results
-  const fetchLimit = maxSources * 4;
-
   const domainCondition =
     domainFilter && domainFilter !== "all"
       ? `AND d.policy_domain = $4`
       : "";
 
-  const params: unknown[] = [embeddingLiteral, SIMILARITY_THRESHOLD, fetchLimit];
+  const chunkParams: unknown[] = [embeddingLiteral, SIMILARITY_THRESHOLD, maxSources * 4];
   if (domainFilter && domainFilter !== "all") {
-    params.push(domainFilter);
+    chunkParams.push(domainFilter);
   }
 
-  const result = await pool.query<{
-    id: number;
-    content: string;
-    document_id: number;
-    filename: string;
-    title: string | null;
-    issuing_authority: string | null;
-    policy_domain: string | null;
-    similarity: number;
-  }>(
-    `
-    SELECT
-      dc.id,
-      dc.content,
-      dc.document_id,
-      d.filename,
-      d.title,
-      d.issuing_authority,
-      d.policy_domain,
-      1 - (dc.embedding <=> $1::vector) AS similarity
-    FROM document_chunks dc
-    INNER JOIN documents d ON dc.document_id = d.id
-    WHERE dc.embedding IS NOT NULL
-      AND 1 - (dc.embedding <=> $1::vector) >= $2
-      ${domainCondition}
-    ORDER BY dc.embedding <=> $1::vector
-    LIMIT $3
-    `,
-    params
-  );
+  // Run wiki and chunk searches in parallel
+  const [chunkResult, wikiResult] = await Promise.all([
+    pool.query<{
+      id: number;
+      content: string;
+      document_id: number;
+      filename: string;
+      title: string | null;
+      issuing_authority: string | null;
+      policy_domain: string | null;
+      similarity: number;
+    }>(
+      `
+      SELECT
+        dc.id,
+        dc.content,
+        dc.document_id,
+        d.filename,
+        d.title,
+        d.issuing_authority,
+        d.policy_domain,
+        1 - (dc.embedding <=> $1::vector) AS similarity
+      FROM document_chunks dc
+      INNER JOIN documents d ON dc.document_id = d.id
+      WHERE dc.embedding IS NOT NULL
+        AND 1 - (dc.embedding <=> $1::vector) >= $2
+        ${domainCondition}
+      ORDER BY dc.embedding <=> $1::vector
+      LIMIT $3
+      `,
+      chunkParams
+    ),
+    pool.query<{
+      id: number;
+      document_id: number;
+      title: string;
+      summary: string | null;
+      markdown_content: string;
+      filename: string;
+      issuing_authority: string | null;
+      similarity: number;
+    }>(
+      `
+      SELECT
+        wp.id,
+        wp.document_id,
+        wp.title,
+        wp.summary,
+        wp.markdown_content,
+        d.filename,
+        d.issuing_authority,
+        1 - (wp.embedding <=> $1::vector) AS similarity
+      FROM wiki_pages wp
+      INNER JOIN documents d ON wp.document_id = d.id
+      WHERE wp.embedding IS NOT NULL
+        AND 1 - (wp.embedding <=> $1::vector) >= $2
+      ORDER BY wp.embedding <=> $1::vector
+      LIMIT $3
+      `,
+      [embeddingLiteral, WIKI_SIMILARITY_THRESHOLD, 3]
+    ),
+  ]);
 
-  // Apply scope filter in JS (requires isDepartmentPolicy heuristic)
-  const scored = result.rows
+  // Apply scope filter to chunks
+  const scoredChunks = chunkResult.rows
     .filter((c) => {
       if (scopeFilter === "department" && !isDepartmentPolicy(c.issuing_authority)) return false;
       if (scopeFilter === "school" && isDepartmentPolicy(c.issuing_authority)) return false;
@@ -185,16 +217,46 @@ export async function ragChat(
     })
     .slice(0, maxSources);
 
-  if (scored.length === 0) {
+  // Apply scope filter to wiki results
+  const scoredWiki = wikiResult.rows
+    .filter((w) => {
+      if (scopeFilter === "department" && !isDepartmentPolicy(w.issuing_authority)) return false;
+      if (scopeFilter === "school" && isDepartmentPolicy(w.issuing_authority)) return false;
+      return true;
+    })
+    .slice(0, 2);
+
+  if (scoredChunks.length === 0 && scoredWiki.length === 0) {
     return { answer: fallbackMessage, citations: [] };
   }
 
-  const context = scored
+  // Build combined context — wiki first (structure), then chunks (evidence)
+  const wikiContext = scoredWiki
+    .map((w, i) => {
+      const excerpt = w.summary
+        ? `${w.summary}\n\n${w.markdown_content.slice(0, 1500)}`
+        : w.markdown_content.slice(0, 2000);
+      return `[W${i + 1}] Wiki summary for "${w.title}" (doc #${w.document_id}):\n${excerpt}`;
+    })
+    .join("\n\n---\n\n");
+
+  const chunkContext = scoredChunks
     .map((c, i) => {
       const label = c.title ?? c.filename;
       return `[${i + 1}] From "${label}" (doc #${c.document_id}):\n${c.content}`;
     })
     .join("\n\n---\n\n");
+
+  const fullContext = [
+    scoredWiki.length > 0
+      ? `=== STRUCTURED WIKI KNOWLEDGE ===\n${wikiContext}`
+      : null,
+    scoredChunks.length > 0
+      ? `=== VERBATIM DOCUMENT EVIDENCE ===\n${chunkContext}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const safeHistory = history
     .filter((m) => m.role === "user" || m.role === "assistant")
@@ -208,7 +270,7 @@ export async function ragChat(
     ...safeHistory,
     {
       role: "user",
-      content: `Context from policy documents (ranked by relevance):\n${context}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above. Cite documents by number (e.g. [1]) when making claims. If the answer is not in the provided documents, respond with exactly: "${fallbackMessage}"`,
+      content: `Context from policy documents:\n${fullContext}\n\nQuestion: ${question}\n\nAnswer based ONLY on the policy documents above.\n- Use [WN] to cite wiki sources (e.g. [W1]) and [N] for verbatim document chunks (e.g. [1]).\n- For summaries or procedures, prefer wiki sources.\n- For exact wording, quote verbatim chunks.\n- If the answer is not in the provided documents, respond with exactly: "${fallbackMessage}"`,
     },
   ];
 
@@ -224,7 +286,7 @@ export async function ragChat(
       ? "Be concise. Use bullet points where possible. Keep answers direct — no more than 3-4 sentences or a short list."
       : "Provide thorough explanations with relevant context. Include background detail where it helps the reader understand the policy.";
 
-  const systemPrompt = `You are PolicyPilot, an AI assistant specialising in Australian K-12 school policies. Answer questions strictly using the provided policy document context. Always cite documents by number [N]. Never fabricate information not present in the context. ${toneInstruction} ${lengthInstruction}`;
+  const systemPrompt = `You are PolicyPilot, an AI assistant specialising in Australian K-12 school policies. You have access to two types of context: structured wiki summaries (labelled [WN]) and verbatim policy document chunks (labelled [N]). Use wiki sources for overviews and procedures; use verbatim chunks for exact wording and specific claims. Always cite sources. Never fabricate information. ${toneInstruction} ${lengthInstruction}`;
 
   const maxTokens = responseLength === "brief" ? 256 : responseLength === "concise" ? 512 : 1024;
 
@@ -238,19 +300,47 @@ export async function ragChat(
   const responseContent = response.content[0];
   if (responseContent.type !== "text") throw new Error("Unexpected response type");
 
-  const citationRefs = [...responseContent.text.matchAll(/\[(\d+)\]/g)].map(
+  // Parse wiki citations [W1], [W2], ...
+  const wikiRefs = [...responseContent.text.matchAll(/\[W(\d+)\]/g)].map(
     (m) => parseInt(m[1], 10) - 1
   );
-  const usedIndices = [...new Set(citationRefs)].filter(
-    (i) => i >= 0 && i < scored.length
+  const usedWikiIndices = [...new Set(wikiRefs)].filter(
+    (i) => i >= 0 && i < scoredWiki.length
   );
 
-  const citations: Citation[] = usedIndices.map((i) => ({
-    documentId: scored[i].document_id,
-    title: scored[i].title ?? null,
-    filename: scored[i].filename,
-    excerpt: scored[i].content.slice(0, 200),
+  // Parse chunk citations [1], [2], ... (but not [W...])
+  const chunkRefs = [...responseContent.text.matchAll(/\[(?!W)(\d+)\]/g)].map(
+    (m) => parseInt(m[1], 10) - 1
+  );
+  const usedChunkIndices = [...new Set(chunkRefs)].filter(
+    (i) => i >= 0 && i < scoredChunks.length
+  );
+
+  const wikiCitations: Citation[] = usedWikiIndices.map((i) => ({
+    documentId: scoredWiki[i].document_id,
+    title: scoredWiki[i].title,
+    filename: scoredWiki[i].filename,
+    excerpt: scoredWiki[i].summary ?? scoredWiki[i].markdown_content.slice(0, 200),
+    sourceType: "wiki" as const,
   }));
+
+  const chunkCitations: Citation[] = usedChunkIndices.map((i) => ({
+    documentId: scoredChunks[i].document_id,
+    title: scoredChunks[i].title ?? null,
+    filename: scoredChunks[i].filename,
+    excerpt: scoredChunks[i].content.slice(0, 200),
+    sourceType: "chunk" as const,
+  }));
+
+  // Deduplicate by documentId, wiki takes precedence
+  const seen = new Set<number>();
+  const citations: Citation[] = [];
+  for (const c of [...wikiCitations, ...chunkCitations]) {
+    if (!seen.has(c.documentId)) {
+      seen.add(c.documentId);
+      citations.push(c);
+    }
+  }
 
   return { answer: responseContent.text, citations };
 }
