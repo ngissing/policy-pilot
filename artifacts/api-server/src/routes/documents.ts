@@ -18,6 +18,24 @@ const upload = multer({
 
 router.use(requireAuth);
 
+// In-memory wiki regeneration job state (single concurrent job)
+interface RegenJob {
+  running: boolean;
+  total: number;
+  done: number;
+  errors: number;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+}
+const regenJob: RegenJob = {
+  running: false,
+  total: 0,
+  done: 0,
+  errors: 0,
+  startedAt: null,
+  finishedAt: null,
+};
+
 router.get("/", async (req, res) => {
   try {
     const query = req.query;
@@ -226,6 +244,66 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
   } catch (err) {
     logger.error(err, "Upload failed");
     res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+// GET /api/documents/wiki-regen-status — poll bulk wiki regen progress
+router.get("/wiki-regen-status", (_req, res) => {
+  res.json({ ...regenJob });
+});
+
+// POST /api/documents/regenerate-all-wikis — regenerate wiki for every document
+router.post("/regenerate-all-wikis", async (_req, res) => {
+  if (regenJob.running) {
+    res.status(409).json({ error: "A regeneration job is already running.", ...regenJob });
+    return;
+  }
+
+  try {
+    const allDocs = await db
+      .select({ id: documents.id, rawText: documents.rawText })
+      .from(documents)
+      .where(isNull(documents.rawText).if(false)); // all rows
+
+    const eligible = allDocs.filter((d) => d.rawText && d.rawText.length > 0);
+
+    regenJob.running = true;
+    regenJob.total = eligible.length;
+    regenJob.done = 0;
+    regenJob.errors = 0;
+    regenJob.startedAt = new Date();
+    regenJob.finishedAt = null;
+
+    res.status(202).json({ message: "Wiki regeneration started", total: eligible.length });
+
+    // Process in batches of 3 to stay within rate limits
+    setImmediate(async () => {
+      const BATCH = 3;
+      for (let i = 0; i < eligible.length; i += BATCH) {
+        const batch = eligible.slice(i, i + BATCH);
+        await Promise.all(
+          batch.map(async (doc) => {
+            try {
+              await upsertWikiPage(doc.id, doc.rawText!);
+              regenJob.done++;
+            } catch (err) {
+              logger.warn({ err, docId: doc.id }, "Wiki regen failed for document");
+              regenJob.errors++;
+            }
+          })
+        );
+      }
+      regenJob.running = false;
+      regenJob.finishedAt = new Date();
+      logger.info(
+        { total: regenJob.total, done: regenJob.done, errors: regenJob.errors },
+        "Bulk wiki regeneration complete"
+      );
+    });
+  } catch (err) {
+    regenJob.running = false;
+    logger.error(err, "Failed to start wiki regeneration");
+    res.status(500).json({ error: "Failed to start wiki regeneration" });
   }
 });
 

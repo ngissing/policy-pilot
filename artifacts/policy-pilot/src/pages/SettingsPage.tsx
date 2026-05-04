@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import {
   Settings,
   MessageSquare,
@@ -15,6 +16,9 @@ import {
   Save,
   RotateCcw,
   Loader2,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +30,15 @@ interface AppSettings {
   showFollowUpSuggestions: boolean;
   fallbackMessage: string;
   updatedAt: string;
+}
+
+interface RegenStatus {
+  running: boolean;
+  total: number;
+  done: number;
+  errors: number;
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
 const DEFAULTS: Omit<AppSettings, "id" | "updatedAt"> = {
@@ -75,6 +88,61 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<Omit<AppSettings, "id" | "updatedAt">>(DEFAULTS);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Wiki regeneration state
+  const [regenStatus, setRegenStatus] = useState<RegenStatus | null>(null);
+  const [startingRegen, setStartingRegen] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const startPolling = () => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await apiFetch<RegenStatus>("/documents/wiki-regen-status");
+        setRegenStatus(status);
+        if (!status.running) stopPolling();
+      } catch {
+        stopPolling();
+      }
+    }, 2500);
+  };
+
+  useEffect(() => {
+    // Check if a job is already running on mount
+    apiFetch<RegenStatus>("/documents/wiki-regen-status")
+      .then((status) => {
+        setRegenStatus(status);
+        if (status.running) startPolling();
+      })
+      .catch(() => {});
+    return stopPolling;
+  }, []);
+
+  async function handleRegenAll() {
+    setStartingRegen(true);
+    try {
+      const res = await apiFetch<{ message: string; total: number }>(
+        "/documents/regenerate-all-wikis",
+        { method: "POST" }
+      );
+      toast({ title: `Regenerating ${res.total} wiki pages…`, description: "This may take a few minutes." });
+      const status = await apiFetch<RegenStatus>("/documents/wiki-regen-status");
+      setRegenStatus(status);
+      startPolling();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to start regeneration";
+      toast({ title: "Could not start regeneration", description: msg, variant: "destructive" });
+    } finally {
+      setStartingRegen(false);
+    }
+  }
 
   useEffect(() => {
     apiFetch<AppSettings>("/settings")
@@ -279,6 +347,81 @@ export default function SettingsPage() {
             placeholder="Enter the message to show when no policy is found…"
             className="text-sm"
           />
+        </CardContent>
+      </Card>
+
+      {/* Wiki Knowledge Base */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-violet-500" />
+            Wiki Knowledge Base
+          </CardTitle>
+          <CardDescription>
+            Regenerate structured wiki pages for all uploaded documents. Useful after adding new
+            documents in bulk or after updating the wiki prompt. Processing runs in batches of 3 —
+            this may take a few minutes for large libraries.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={handleRegenAll}
+            disabled={startingRegen || regenStatus?.running}
+            variant="outline"
+            className="gap-2 border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300"
+          >
+            {startingRegen || regenStatus?.running ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {regenStatus?.running
+              ? `Regenerating… ${regenStatus.done} / ${regenStatus.total}`
+              : "Regenerate All Wiki Pages"}
+          </Button>
+
+          {/* Progress bar while running */}
+          {regenStatus?.running && regenStatus.total > 0 && (
+            <div className="space-y-1.5">
+              <Progress
+                value={Math.round((regenStatus.done / regenStatus.total) * 100)}
+                className="h-2"
+              />
+              <p className="text-xs text-slate-500">
+                {regenStatus.done} of {regenStatus.total} documents processed
+                {regenStatus.errors > 0 && (
+                  <span className="text-amber-600 ml-2">· {regenStatus.errors} errors</span>
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Completion summary */}
+          {regenStatus && !regenStatus.running && regenStatus.finishedAt && (
+            <div
+              className={cn(
+                "flex items-start gap-2 rounded-lg px-4 py-3 text-sm",
+                regenStatus.errors === 0
+                  ? "bg-green-50 border border-green-100 text-green-800"
+                  : "bg-amber-50 border border-amber-100 text-amber-800"
+              )}
+            >
+              {regenStatus.errors === 0 ? (
+                <CheckCircle className="w-4 h-4 shrink-0 mt-0.5 text-green-600" />
+              ) : (
+                <XCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              )}
+              <span>
+                Last run completed:{" "}
+                <strong>
+                  {regenStatus.done} wiki page{regenStatus.done !== 1 ? "s" : ""} updated
+                </strong>
+                {regenStatus.errors > 0 && `, ${regenStatus.errors} failed`}.
+                Finished at{" "}
+                {new Date(regenStatus.finishedAt).toLocaleTimeString("en-AU")}.
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
