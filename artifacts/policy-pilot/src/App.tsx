@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { Switch, Route, Router as WouterRouter, Link, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -139,13 +139,17 @@ function AppShell() {
 
 function ClerkTokenSync() {
   const { getToken, isSignedIn } = useAuth();
-  useEffect(() => {
+  // useLayoutEffect runs before React Query's microtask-scheduled fetches,
+  // so the token getter is guaranteed to be set before any API call fires.
+  // skipCache: true ensures a fresh JWT is fetched on every API call,
+  // preventing 401s when the 60-second Clerk token is near expiry.
+  useLayoutEffect(() => {
     if (!isSignedIn) {
       setAuthTokenGetter(null);
       setApiTokenGetter(null);
       return;
     }
-    const getter = () => getToken();
+    const getter = () => getToken({ skipCache: true });
     setAuthTokenGetter(getter);
     setApiTokenGetter(getter);
   }, [isSignedIn, getToken]);
