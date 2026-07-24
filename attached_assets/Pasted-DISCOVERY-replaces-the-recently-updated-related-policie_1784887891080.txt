@@ -1,0 +1,48 @@
+DISCOVERY — replaces the /recently-updated + related-policies fallback entirely.
+
+1. Fetch https://www2.education.vic.gov.au/sitemap.xml (656 KB, flat urlset, not an index).
+2. Extract all <loc> values; keep those matching ^https://www2\.education\.vic\.gov\.au/pal/
+   Expect 3,406. If the count drops below 3,000 or exceeds 4,000, abort and alert —
+   the site structure has changed.
+3. Topic roots = paths with exactly one segment after /pal/. Expect 456.
+4. Retain <lastmod> per URL as a secondary change signal.
+
+TARGETS
+   Crawl {topic_root}/print-all for each of the 456 roots.
+   NOTE: print-all is NOT listed in the sitemap — construct it. It is valid and returns
+   the full topic (all tabs + all chapters) as one server-rendered page.
+   If a print-all returns non-200, fall back to crawling that topic's sitemap URLs individually.
+
+TAB VOCABULARY — do not hardcode policy/guidance/resources.
+   First tab is one of: policy | overview | policy-and-guidelines | procedure | advice
+   Chapter parents are: guidance | policy-and-guidelines | procedure | procedures
+   Resources tab: resources (present on 453 of 456)
+   Treat the segment after the topic slug as an open vocabulary; log unrecognised values.
+
+POLITENESS — verified against robots.txt 24 Jul 2026.
+   600 ms delay is compliant. No Crawl-delay directive applies to User-agent: *.
+   Do not send a UA containing "SemrushBot" (fully disallowed).
+   Do not crawl /js, /img, /_nuxt.
+
+DATES — precedence order, highest first.
+   1. "Reviewed {date}" / "Policy last updated" parsed from page body  ← authoritative
+   2. <lastmod> from sitemap                                          ← secondary
+   3. Elasticsearch "changed" field                                   ← unreliable, sorting only
+   The ES "changed" field is a Drupal node timestamp; a large block reads 2020-03-11,
+   which is the bulk migration date, not a review. Never surface it to users as a review date.
+
+METADATA ENRICHMENT — optional, non-critical path.
+   POST https://f638372d60d9258888e59583f505162f.sdp4.elastic.sdp.vic.gov.au/elasticsearch_index_production_node/_search
+   Body: {"query":{"term":{"type":"publication"}},"size":500,
+          "_source":["url","title","field_pal_category_name","changed"]}
+   Returns 454 topics with DET's own category assignments (many topics carry two).
+   Strip the /site-5 prefix from the url field to get /pal/{slug}.
+   Prefer these categories over AI-inferred tags.
+   Endpoint is undocumented and CORS-scoped — may require an Origin header or may fail
+   entirely from a server context. If it fails, degrade gracefully; discovery does not depend on it.
+
+RECONCILIATION
+   Sitemap reports 456 topic roots; Elasticsearch reports 454 publications.
+   Two known anomalies lack a /pal/ segment in the ES url field:
+   right-to-disconnect, teach-the-future-fellowship-program.
+   Resolve these two manually before treating either count as ground truth.

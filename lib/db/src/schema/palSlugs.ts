@@ -25,6 +25,11 @@ export const palSlugs = pgTable(
     policyLastUpdated: text("policy_last_updated"),
     /** Value from the "Reviewed {date}" footer */
     reviewedDate: text("reviewed_date"),
+    /**
+     * <lastmod> from sitemap.xml — used by maintenance mode to detect changes
+     * without fetching every page. Precedence: page body > sitemapLastmod > ES changed.
+     */
+    sitemapLastmod: text("sitemap_lastmod"),
     /** True when the slug has disappeared from the live site */
     isRetired: boolean("is_retired").notNull().default(false),
     retiredAt: timestamp("retired_at", { withTimezone: true }),

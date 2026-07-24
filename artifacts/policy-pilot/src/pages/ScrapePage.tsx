@@ -491,13 +491,15 @@ function PalTab({
           )}
 
           {/* Spec notice */}
-          <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 space-y-1">
-            <p className="font-medium">📋 From the PAL Crawl Spec (§7 open items)</p>
-            <ul className="space-y-0.5 list-disc list-inside text-amber-700">
-              <li>The A–Z JSON API endpoint hasn&apos;t been confirmed — slug discovery uses /recently-updated + related-policies links as a best-effort alternative.</li>
-              <li>Once you capture the A–Z endpoint via DevTools (Network → XHR → click a letter), fill it in and coverage becomes authoritative.</li>
-              <li>Verify robots.txt confirms 600 ms crawl delay is compliant before large runs.</li>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-700 space-y-1.5">
+            <p className="font-medium text-slate-800">📋 How discovery works</p>
+            <ul className="space-y-1 list-disc list-inside text-slate-600">
+              <li><span className="font-medium">Sitemap</span> — fetches sitemap.xml (flat, ~656 KB) and extracts all 456 topic roots with their <code className="bg-slate-100 px-0.5 rounded">lastmod</code> dates. If the count falls outside 3,000–4,000 PAL URLs the job aborts and alerts.</li>
+              <li><span className="font-medium">Categories</span> — optionally enriched from DET&apos;s Elasticsearch endpoint (DET&apos;s own category labels, up to 2 per topic). Degrades gracefully if the endpoint is CORS-blocked from the server.</li>
+              <li><span className="font-medium">Maintenance</span> — compares sitemap <code className="bg-slate-100 px-0.5 rounded">lastmod</code> against stored values; re-crawls only changed topics and tombstones any slug no longer in the sitemap.</li>
+              <li><span className="font-medium">Politeness</span> — 600 ms delay, verified against robots.txt 24 Jul 2026.</li>
             </ul>
+            <p className="text-slate-500 pt-0.5">Two known sitemap/ES reconciliation anomalies: <em>right-to-disconnect</em> and <em>teach-the-future-fellowship-program</em> lack a /pal/ segment in the ES data — their categories may be missing until manually resolved.</p>
           </div>
 
           <Button
