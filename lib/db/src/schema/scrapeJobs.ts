@@ -11,6 +11,13 @@ export const scrapeJobs = pgTable(
   "scrape_jobs",
   {
     id: serial("id").primaryKey(),
+    /**
+     * 'generic'           — user-defined BFS crawl
+     * 'pal-full'          — two-pass PAL print-all crawl
+     * 'pal-maintenance'   — incremental re-crawl of recently-updated PAL topics
+     * 'pal-fallback'      — link-graph crawl from enrolment hub (no slug index required)
+     */
+    jobType: text("job_type").notNull().default("generic"),
     seedUrl: text("seed_url").notNull(),
     status: text("status").notNull().default("pending"),
     maxDepth: integer("max_depth").notNull().default(3),

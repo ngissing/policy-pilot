@@ -1,0 +1,144 @@
+# PAL Crawl & Ingestion Spec
+
+Reference document for scraping the Victorian DET **Policy and Advisory Library** (PAL) at `https://www2.education.vic.gov.au/pal`.
+
+Consult this before configuring a crawl, writing an ingestion parser, or debugging missing/duplicate policy content.
+
+Last verified: 24 July 2026
+
+---
+
+## 1. Site model
+
+PAL is a Nuxt front-end over a Drupal backend. Content is organised as **topics**, not individual documents. Each topic has a stable slug and a fixed tab structure.
+
+```
+/pal/{slug}                          landing (redirects to /policy or /overview)
+/pal/{slug}/policy                   policy statement          ← some topics use /overview instead
+/pal/{slug}/guidance                 guidance landing
+/pal/{slug}/guidance/{chapter-slug}  guidance chapter (1–20 per topic; bulk of word count)
+/pal/{slug}/resources                links to forms, PDFs, DOCX
+/pal/{slug}/print-all                ENTIRE topic on one server-rendered page  ← preferred target
+```
+
+**Scale:** ~400–500 live topics (410 at 2020 launch, consolidated from ~1,200 legacy documents). Roughly 10–12 crawlable pages per topic.
+
+- Full tab-and-chapter crawl: **4,000–6,000 pages**
+- `print-all` only crawl: **~450 pages**
+
+**Categories** (nine, used as facets):
+Human resources (HRWeb) · Finance and procurement · Student health, safety, wellbeing and engagement · Infrastructure and facilities · Occupational health and safety · School operations and student administration · School councils · Learning, teaching, curriculum and improvement · Information management, security and technology
+
+---
+
+## 2. Known traps
+
+Read this section before changing any crawl setting.
+
+| Trap | Detail | Mitigation |
+|---|---|---|
+| **`/pal` links to no policies** | The A–Z and category filters point at `/filter-az?filters[...]`, which is client-side rendered. A plain HTTP crawler seeded at `/pal` retrieves an empty shell and discovers zero topics. | Never seed at `/pal`. Use an explicit slug list, or seed at a densely linked topic page. |
+| **PDFs/DOCX are off-domain** | Attachments live on `content.sdp.education.vic.gov.au`. Same-domain crawl rules skip all of them. | Allowlist that host explicitly. |
+| **SharePoint links are gated** | Many resources sit on `eduvic.sharepoint.com` and are marked "staff login required". They return 401/403. | Blocklist the host. Record the URL as metadata, don't attempt fetch. |
+| **`print-all` breadcrumbs are broken** | They omit the `/pal` prefix (`/victorian-teaching-learning-model`) and 404. | Filter these from the crawl frontier. |
+| **Triple duplication** | `/policy`, each `/guidance/{chapter}` and `/print-all` contain overlapping text. Indexing all three triples token counts and degrades retrieval ranking. | Pick one canonical form. See §4. |
+| **Retired topics** | Topics are retired without redirect (e.g. Community VCAL, Environmental Hygiene, Partnerships and Collaboration with Other Schools). Stale snapshots will cite dead policy. | Diff slug lists each run and tombstone. See §5. |
+| **External domains** | Heavy outbound linking to `arc.educationapps.vic.gov.au`, `schools.vic.gov.au`, `vcaa.vic.edu.au`. Not policy content. | Leave same-domain restriction on for HTML. |
+
+---
+
+## 3. Crawl configuration
+
+### Preferred: two-pass, `print-all` only
+
+**Pass 1 — build the slug index.**
+Open any A–Z page in Chrome with DevTools → Network → XHR, click a letter, capture the JSON API call the page fires. Repeat A–Z. This yields the definitive topic list with slugs. Cache it.
+
+**Pass 2 — direct fetch.**
+Feed `https://www2.education.vic.gov.au/pal/{slug}/print-all` for every slug as a seed at **depth 0**.
+
+```
+Seeds:      ~450 print-all URLs
+Max depth:  0
+Max pages:  600
+Runtime:    ~5 min at 600 ms rate limit
+```
+
+Each result is a complete, self-contained policy document — the correct granularity for RAG chunking.
+
+### Fallback: link-graph crawl
+
+Use only if the slug index isn't available. Coverage is not provable.
+
+```
+Seed URL:   https://www2.education.vic.gov.au/pal/enrolment/policy
+Max depth:  5
+Max pages:  4000
+```
+
+Enrolment is a dense hub. Every policy page carries a **Related policies** block (typically 8–15 outbound topic links), so the graph propagates well — but completeness is not guaranteed.
+
+### Attachment crawl
+
+```
+Allowlist:  www2.education.vic.gov.au, content.sdp.education.vic.gov.au
+Blocklist:  eduvic.sharepoint.com, arc.educationapps.vic.gov.au
+```
+
+---
+
+## 4. Ingestion rules
+
+**Canonical form:** index `print-all` only. Exclude `/policy`, `/guidance`, `/guidance/*` and `/resources` from the index if `print-all` succeeded for that slug. Fall back to the tabs only where `print-all` 404s.
+
+**Extract as structured metadata, not body text:**
+
+| Field | Source | Use |
+|---|---|---|
+| `topic_slug` | URL | Primary key |
+| `topic_title` | `<h1>` | Display, citation |
+| `category` | Category label above `<h1>` | Faceted filtering |
+| `policy_last_updated` | "Policy last updated" block | Staleness flagging |
+| `reviewed_date` | "Reviewed {date}" footer | Staleness flagging |
+| `scope` | "Scope" block (Schools / All staff / etc.) | Applicability filtering |
+| `contact_division` | "Contact" block | "Who do I ask" answers |
+| `contact_email` | "Contact" block | Escalation path |
+| `related_policies[]` | Related policies list | Graph-aware retrieval — surface adjacent obligations |
+| `resource_links[]` | Resources tab, with `login_required` flag | Forms and templates |
+| `chapters[]` | Guidance chapter headings | Sub-document navigation |
+
+**Chunking:** split `print-all` on `##` headings (Policy / Summary / Details / each guidance chapter / Resources). Carry all metadata onto every chunk so citations resolve to topic + review date.
+
+**Citation format:** always surface topic title, tab, and review date. Never present policy content without its `reviewed_date` — staleness is a compliance risk.
+
+---
+
+## 5. Maintenance loop
+
+`https://www2.education.vic.gov.au/pal/recently-updated` is server-rendered, complete back to 15 June 2020, and lists every substantive change with date, topic name and a plain-English description of what changed.
+
+**Weekly job:**
+1. Fetch `/pal/recently-updated`.
+2. Parse entries newer than last run timestamp.
+3. Re-crawl only the named topics' `print-all` pages.
+4. Re-fetch the slug index; diff against stored slugs.
+5. Tombstone any slug that has disappeared — mark retired, exclude from retrieval, retain for audit.
+6. Store the change description against the topic. This lets the app answer *what* changed, not just *that* something did.
+
+Full re-crawls are unnecessary more than quarterly.
+
+---
+
+## 6. Licensing
+
+Vic government web content is generally CC BY 4.0, but confirm against `https://www.vic.gov.au/disclaimer` before distributing beyond internal school use. Attribution requirements apply.
+
+---
+
+## 7. Open items to verify
+
+- [ ] Exact A–Z JSON API endpoint and its parameters (capture via DevTools; record here once confirmed)
+- [ ] Current live topic count (derive from slug index, replace the 400–500 estimate above)
+- [ ] Whether a `sitemap.xml` exists and is complete — would replace Pass 1 entirely
+- [ ] `robots.txt` crawl-delay directive — confirm 600 ms is compliant
+- [ ] Which topics use `/overview` rather than `/policy`

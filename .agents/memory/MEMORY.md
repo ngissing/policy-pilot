@@ -1,0 +1,2 @@
+- [PAL crawl spec](pal-crawl-spec.md) — slug discovery uses /recently-updated + related-policies BFS (not A–Z API; endpoint unknown, §7 open item); print-all only canonical form
+- [Auth fix: Clerk token race](clerk-token-race.md) — useLayoutEffect + skipCache:true on getToken; avoids race with React Query microtask scheduling

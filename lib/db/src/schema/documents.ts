@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   real,
+  jsonb,
   index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -24,6 +25,11 @@ export const documents = pgTable(
     confidenceScore: real("confidence_score"),
     sourceUrl: text("source_url"),
     status: text("status").notNull().default("pending"),
+    /**
+     * Structured metadata extracted from DET PAL print-all pages.
+     * Null for non-PAL documents. Shape: PalDocMetadata (see palCrawler.ts).
+     */
+    palMetadata: jsonb("pal_metadata"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
