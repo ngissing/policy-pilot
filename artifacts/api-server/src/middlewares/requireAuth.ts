@@ -1,14 +1,13 @@
-import { clerkMiddleware, getAuth as clerkGetAuth } from "@clerk/express";
+import { getAuth as clerkGetAuth } from "@clerk/express";
 import type { Request, Response, NextFunction } from "express";
 
 export { clerkGetAuth as getAuth };
 
-// Attach Clerk's context to every request (does not block unauthenticated calls)
-export const clerkContext = clerkMiddleware();
-
-// Guard: return 401 JSON — never redirect — so the client always gets parseable JSON
+// Returns 401 JSON — never redirects.
+// Must run after clerkMiddleware() has populated req.auth (done in app.ts).
+// acceptsToken: "any" matches what the now-deprecated requireAuth() used internally.
 export const requireAuth = (req: Request, res: Response, next: NextFunction): void => {
-  const { userId } = clerkGetAuth(req);
+  const { userId } = clerkGetAuth(req, { acceptsToken: "any" } as Parameters<typeof clerkGetAuth>[1]);
   if (!userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
