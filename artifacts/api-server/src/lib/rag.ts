@@ -342,5 +342,37 @@ export async function ragChat(
     }
   }
 
-  return { answer: responseContent.text, citations };
+  // Build a mapping from original context reference → final 1-based display position.
+  // Claude numbers chunks [1]..[N] and wiki sources [W1]..[WM] based on their position
+  // in the context. The citations array is deduplicated, so those numbers no longer
+  // correspond to sequential display positions. We rewrite them here so the inline
+  // citations in the answer text match the [1], [2], ... labels shown in the sources panel.
+  const refToDisplay = new Map<string, number>();
+
+  // Wiki refs: [W1] → original index 0 → find in citations by documentId
+  for (const origIdx of usedWikiIndices) {
+    const docId = scoredWiki[origIdx].document_id;
+    const displayPos = citations.findIndex((c) => c.documentId === docId) + 1;
+    if (displayPos > 0) refToDisplay.set(`W${origIdx + 1}`, displayPos);
+  }
+
+  // Chunk refs: [1], [3] etc. → original index → find in citations by documentId
+  // (chunk may be deduped under a wiki entry for the same document, which is correct)
+  for (const origIdx of usedChunkIndices) {
+    const docId = scoredChunks[origIdx].document_id;
+    const displayPos = citations.findIndex((c) => c.documentId === docId) + 1;
+    if (displayPos > 0) refToDisplay.set(`${origIdx + 1}`, displayPos);
+  }
+
+  // Replace [WN] and [N] in one pass to avoid double-substitution
+  const answer = responseContent.text.replace(
+    /\[W(\d+)\]|\[(?!W)(\d+)\]/g,
+    (match, wNum: string | undefined, cNum: string | undefined) => {
+      const key = wNum !== undefined ? `W${wNum}` : cNum!;
+      const pos = refToDisplay.get(key);
+      return pos !== undefined ? `[${pos}]` : match;
+    }
+  );
+
+  return { answer, citations };
 }
