@@ -128,4 +128,13 @@ export type ListDocumentsParams = {
   audience?: string;
   status?: string;
   search?: string;
+  page?: number;
+  limit?: number;
 };
+
+export interface DocumentListResponse {
+  data: Document[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

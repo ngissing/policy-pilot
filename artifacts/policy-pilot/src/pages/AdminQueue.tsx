@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetReviewQueue,
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -32,8 +33,10 @@ import {
   AlertCircle,
   Loader2,
   XCircle,
+  BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/api";
 import type { Document } from "@workspace/api-client-react";
 
 const DOMAINS = [
@@ -51,9 +54,16 @@ type FormState = {
   audience?: string;
 };
 
+interface WikiPreview {
+  summary: string | null;
+  markdownContent: string;
+}
+
 export default function AdminQueue() {
   const [editing, setEditing] = useState<Document | null>(null);
   const [form, setForm] = useState<FormState>({});
+  const [wikiPreview, setWikiPreview] = useState<WikiPreview | null>(null);
+  const [wikiLoading, setWikiLoading] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -75,6 +85,19 @@ export default function AdminQueue() {
     },
   });
 
+  // Fetch wiki preview whenever a document is opened for review
+  useEffect(() => {
+    if (!editing) {
+      setWikiPreview(null);
+      return;
+    }
+    setWikiLoading(true);
+    apiFetch<WikiPreview>(`/documents/${editing.id}/wiki`)
+      .then((w) => setWikiPreview(w))
+      .catch(() => setWikiPreview(null))
+      .finally(() => setWikiLoading(false));
+  }, [editing?.id]);
+
   const openEdit = (doc: Document) => {
     setEditing(doc);
     setForm({
@@ -95,6 +118,15 @@ export default function AdminQueue() {
     if (!editing) return;
     updateMut.mutate({ id: editing.id, data: { status: "rejected" } });
   };
+
+  // Extract first 2 meaningful sections from wiki markdown for the preview
+  function extractWikiPreviewText(markdown: string): string {
+    const sections = markdown.split(/\n(?=## )/).slice(0, 2);
+    return sections
+      .map((s) => s.trim())
+      .join("\n\n")
+      .slice(0, 600);
+  }
 
   return (
     <div className="space-y-6">
@@ -178,100 +210,141 @@ export default function AdminQueue() {
       )}
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Review Document</DialogTitle>
           </DialogHeader>
+
           {editing && (
-            <div className="space-y-4">
-              <p className="text-sm text-slate-500 truncate">{editing.filename}</p>
-              {editing.confidenceScore != null && (
-                <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50">
-                  AI confidence: {Math.round(editing.confidenceScore * 100)}%
-                </Badge>
-              )}
+            <ScrollArea className="flex-1 overflow-y-auto pr-1">
+              <div className="space-y-4 pb-2">
+                <p className="text-sm text-slate-500 truncate">{editing.filename}</p>
+                {editing.confidenceScore != null && (
+                  <Badge className="bg-amber-50 text-amber-700 hover:bg-amber-50">
+                    AI confidence: {Math.round(editing.confidenceScore * 100)}%
+                  </Badge>
+                )}
 
-              <div className="space-y-2">
-                <Label>Title</Label>
-                <Input
-                  value={form.title ?? ""}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="Document title"
-                />
-              </div>
+                {/* Wiki content preview */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-white">
+                    <BookOpen className="w-3.5 h-3.5 text-violet-500" />
+                    <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                      AI-generated wiki preview
+                    </span>
+                  </div>
+                  <div className="px-3 py-3">
+                    {wikiLoading ? (
+                      <div className="flex items-center gap-2 text-slate-400 py-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span className="text-xs">Loading wiki…</span>
+                      </div>
+                    ) : wikiPreview ? (
+                      <div className="space-y-2">
+                        {wikiPreview.summary && (
+                          <p className="text-sm text-slate-700 leading-relaxed border-l-2 border-violet-300 pl-3 italic">
+                            {wikiPreview.summary}
+                          </p>
+                        )}
+                        <pre className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed font-sans">
+                          {extractWikiPreviewText(wikiPreview.markdownContent)}
+                          {wikiPreview.markdownContent.length > 600 && (
+                            <span className="text-slate-400"> …(truncated)</span>
+                          )}
+                        </pre>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 py-1">
+                        No wiki page generated yet — document may still be processing.
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <Label>Issuing Authority</Label>
-                <Input
-                  value={form.issuingAuthority ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, issuingAuthority: e.target.value })
-                  }
-                  placeholder="e.g. Department of Education, School Name"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
+                {/* Editable metadata fields */}
                 <div className="space-y-2">
-                  <Label>Domain</Label>
-                  <Select
-                    value={form.policyDomain ?? ""}
-                    onValueChange={(v) => setForm({ ...form, policyDomain: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DOMAINS.map((d) => (
-                        <SelectItem key={d} value={d}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Title</Label>
+                  <Input
+                    value={form.title ?? ""}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="Document title"
+                  />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select
-                    value={form.documentType ?? ""}
-                    onValueChange={(v) => setForm({ ...form, documentType: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DOC_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Issuing Authority</Label>
+                  <Input
+                    value={form.issuingAuthority ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, issuingAuthority: e.target.value })
+                    }
+                    placeholder="e.g. Department of Education, School Name"
+                  />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Audience</Label>
-                  <Select
-                    value={form.audience ?? ""}
-                    onValueChange={(v) => setForm({ ...form, audience: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AUDIENCES.map((a) => (
-                        <SelectItem key={a} value={a}>
-                          {a}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label>Domain</Label>
+                    <Select
+                      value={form.policyDomain ?? ""}
+                      onValueChange={(v) => setForm({ ...form, policyDomain: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DOMAINS.map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <Select
+                      value={form.documentType ?? ""}
+                      onValueChange={(v) => setForm({ ...form, documentType: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DOC_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Audience</Label>
+                    <Select
+                      value={form.audience ?? ""}
+                      onValueChange={(v) => setForm({ ...form, audience: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AUDIENCES.map((a) => (
+                          <SelectItem key={a} value={a}>
+                            {a}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
-            </div>
+            </ScrollArea>
           )}
-          <DialogFooter className="gap-2">
+
+          <DialogFooter className="gap-2 pt-2 border-t border-slate-100">
             <Button
               variant="outline"
               onClick={reject}

@@ -22,6 +22,7 @@ import type {
   ChatSessionWithMessages,
   CreateChatSessionBody,
   Document,
+  DocumentListResponse,
   DomainStat,
   Error,
   HealthStatus,
@@ -140,8 +141,8 @@ export const getListDocumentsUrl = (params?: ListDocumentsParams) => {
 export const listDocuments = async (
   params?: ListDocumentsParams,
   options?: RequestInit,
-): Promise<Document[]> => {
-  return customFetch<Document[]>(getListDocumentsUrl(params), {
+): Promise<DocumentListResponse> => {
+  return customFetch<DocumentListResponse>(getListDocumentsUrl(params), {
     ...options,
     method: "GET",
   });

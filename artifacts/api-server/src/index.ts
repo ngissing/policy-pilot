@@ -2,6 +2,9 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { warmupEmbeddings } from "./lib/embeddings";
 import { runMigrations, backfillEmbeddings } from "./lib/migrate";
+import { db } from "@workspace/db";
+import { documents } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 
@@ -17,7 +20,26 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+async function recoverStuckDocuments(): Promise<void> {
+  // Any document left in "processing" at startup means the server crashed or
+  // restarted mid-job. Reset them to "pending" so they appear in the review
+  // queue and can be manually reprocessed rather than staying invisible forever.
+  const result = await db
+    .update(documents)
+    .set({ status: "pending", updatedAt: new Date() })
+    .where(eq(documents.status, "processing"))
+    .returning({ id: documents.id });
+
+  if (result.length > 0) {
+    logger.warn(
+      { count: result.length, ids: result.map((r) => r.id) },
+      "Recovered stuck processing documents — reset to pending"
+    );
+  }
+}
+
 runMigrations()
+  .then(() => recoverStuckDocuments())
   .then(() => {
     app.listen(port, (err) => {
       if (err) {
@@ -36,6 +58,6 @@ runMigrations()
     });
   })
   .catch((err) => {
-    logger.error({ err }, "Database migration failed — aborting startup");
+    logger.error({ err }, "Startup failed — aborting");
     process.exit(1);
   });

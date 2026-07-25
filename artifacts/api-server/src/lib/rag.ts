@@ -175,6 +175,7 @@ export async function ragChat(
       INNER JOIN documents d ON dc.document_id = d.id
       WHERE dc.embedding IS NOT NULL
         AND 1 - (dc.embedding <=> $1::vector) >= $2
+        AND d.status != 'rejected'
         ${domainCondition}
       ORDER BY dc.embedding <=> $1::vector
       LIMIT $3
@@ -210,6 +211,7 @@ export async function ragChat(
       INNER JOIN documents d ON ws.document_id = d.id
       WHERE ws.embedding IS NOT NULL
         AND 1 - (ws.embedding <=> $1::vector) >= $2
+        AND d.status != 'rejected'
       ORDER BY ws.embedding <=> $1::vector
       LIMIT 4
       `,

@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { documents, documentChunks, wikiPages } from "@workspace/db";
-import { and, eq, isNull, lt, or, desc } from "drizzle-orm";
+import { and, eq, ilike, isNull, lt, or, desc, count } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
 import { upsertWikiPage } from "../lib/wiki.js";
@@ -36,6 +36,9 @@ const regenJob: RegenJob = {
   finishedAt: null,
 };
 
+const PAGE_SIZE_DEFAULT = 25;
+const PAGE_SIZE_MAX = 100;
+
 router.get("/", async (req, res) => {
   try {
     const query = req.query;
@@ -45,40 +48,55 @@ router.get("/", async (req, res) => {
     const status = typeof query.status === "string" ? query.status : undefined;
     const search = typeof query.search === "string" ? query.search : undefined;
 
-    let rows = await db
-      .select({
-        id: documents.id,
-        filename: documents.filename,
-        title: documents.title,
-        fileType: documents.fileType,
-        issuingAuthority: documents.issuingAuthority,
-        policyDomain: documents.policyDomain,
-        documentType: documents.documentType,
-        audience: documents.audience,
-        confidenceScore: documents.confidenceScore,
-        sourceUrl: documents.sourceUrl,
-        status: documents.status,
-        createdAt: documents.createdAt,
-        updatedAt: documents.updatedAt,
-      })
-      .from(documents)
-      .orderBy(desc(documents.createdAt));
+    const rawPage = parseInt(typeof query.page === "string" ? query.page : "1", 10);
+    const rawLimit = parseInt(typeof query.limit === "string" ? query.limit : String(PAGE_SIZE_DEFAULT), 10);
+    const page = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+    const pageSize = isNaN(rawLimit) || rawLimit < 1 ? PAGE_SIZE_DEFAULT : Math.min(rawLimit, PAGE_SIZE_MAX);
 
-    if (domain) rows = rows.filter((r) => r.policyDomain === domain);
-    if (documentType) rows = rows.filter((r) => r.documentType === documentType);
-    if (audience) rows = rows.filter((r) => r.audience === audience);
-    if (status) rows = rows.filter((r) => r.status === status);
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          r.filename.toLowerCase().includes(q) ||
-          (r.title ?? "").toLowerCase().includes(q) ||
-          (r.issuingAuthority ?? "").toLowerCase().includes(q)
-      );
-    }
+    // Build all filters as SQL — never fetch the full table into Node memory
+    const whereCondition = and(
+      domain ? eq(documents.policyDomain, domain) : undefined,
+      documentType ? eq(documents.documentType, documentType) : undefined,
+      audience ? eq(documents.audience, audience) : undefined,
+      status ? eq(documents.status, status) : undefined,
+      search
+        ? or(
+            ilike(documents.filename, `%${search}%`),
+            ilike(documents.title, `%${search}%`),
+            ilike(documents.issuingAuthority, `%${search}%`)
+          )
+        : undefined
+    );
 
-    res.json(rows);
+    const selectedFields = {
+      id: documents.id,
+      filename: documents.filename,
+      title: documents.title,
+      fileType: documents.fileType,
+      issuingAuthority: documents.issuingAuthority,
+      policyDomain: documents.policyDomain,
+      documentType: documents.documentType,
+      audience: documents.audience,
+      confidenceScore: documents.confidenceScore,
+      sourceUrl: documents.sourceUrl,
+      status: documents.status,
+      createdAt: documents.createdAt,
+      updatedAt: documents.updatedAt,
+    };
+
+    // Run count and paginated data fetch in parallel
+    const [countResult, rows] = await Promise.all([
+      db.select({ total: count() }).from(documents).where(whereCondition),
+      db
+        .select(selectedFields)
+        .from(documents)
+        .where(whereCondition)
+        .orderBy(desc(documents.createdAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+    ]);
+
+    res.json({ data: rows, total: countResult[0]?.total ?? 0, page, pageSize });
   } catch (err) {
     logger.error(err, "Error listing documents");
     res.status(500).json({ error: "Failed to list documents" });
@@ -353,12 +371,15 @@ router.post("/:id/reprocess", async (req, res) => {
     setImmediate(async () => {
       try {
         const rawText = doc.rawText!;
-        // Delete old chunks and regenerate
-        await db.delete(documentChunks).where(eq(documentChunks.documentId, id));
 
-        const chunks = chunkText(rawText);
-        await Promise.all([
+        // Run auto-tagging, chunk regeneration, and wiki regeneration in parallel.
+        // Chunk regeneration must delete before re-inserting (sequential internally),
+        // but is independent of tagging and wiki generation.
+        const [tags] = await Promise.all([
+          autoTagDocument(rawText),
           (async () => {
+            await db.delete(documentChunks).where(eq(documentChunks.documentId, id));
+            const chunks = chunkText(rawText);
             if (chunks.length > 0) {
               const embeddings = await Promise.all(chunks.map((c) => computeEmbedding(c)));
               await db.insert(documentChunks).values(
@@ -374,8 +395,25 @@ router.post("/:id/reprocess", async (req, res) => {
           upsertWikiPage(id, rawText),
         ]);
 
-        await db.update(documents).set({ status: "approved", updatedAt: new Date() }).where(eq(documents.id, id));
-        logger.info({ docId: id }, "Document reprocessed");
+        // Set status based on the fresh confidence score — never force-approve
+        const newStatus =
+          (tags.confidenceScore ?? 0) >= REVIEW_CONFIDENCE_THRESHOLD ? "approved" : "pending";
+
+        await db
+          .update(documents)
+          .set({
+            title: tags.title,
+            issuingAuthority: tags.issuingAuthority,
+            policyDomain: tags.policyDomain,
+            documentType: tags.documentType,
+            audience: tags.audience,
+            confidenceScore: tags.confidenceScore,
+            status: newStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(documents.id, id));
+
+        logger.info({ docId: id, status: newStatus, confidence: tags.confidenceScore }, "Document reprocessed");
       } catch (err) {
         logger.error(err, "Error during reprocessing");
         await db.update(documents).set({ status: "pending", updatedAt: new Date() }).where(eq(documents.id, id));

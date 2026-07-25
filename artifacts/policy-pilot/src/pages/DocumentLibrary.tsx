@@ -30,10 +30,14 @@ import {
   Download,
   Globe,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiBlob } from "@/lib/api";
 import { useLocation } from "wouter";
+
+const PAGE_SIZE = 25;
 
 const DOMAINS = [
   "all",
@@ -50,7 +54,7 @@ const DOMAINS = [
 
 const DOC_TYPES = ["all", "policy", "procedure", "guideline", "framework", "strategy"];
 const AUDIENCES = ["all", "staff", "students", "parents"];
-const STATUSES = ["all", "approved", "pending", "processing"];
+const STATUSES = ["all", "approved", "pending", "rejected", "processing"];
 
 function statusBadge(status: string) {
   if (status === "approved")
@@ -96,6 +100,7 @@ export default function DocumentLibrary() {
   const [docType, setDocType] = useState("all");
   const [audience, setAudience] = useState("all");
   const [status, setStatus] = useState("all");
+  const [page, setPage] = useState(1);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, navigate] = useLocation();
@@ -103,17 +108,26 @@ export default function DocumentLibrary() {
   const highlightId = new URLSearchParams(searchString).get("highlight");
   const highlightRef = useRef<HTMLDivElement | null>(null);
 
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [search, domain, docType, audience, status]);
+
   const params: ListDocumentsParams = {
     ...(search ? { search } : {}),
     ...(domain !== "all" ? { domain } : {}),
     ...(docType !== "all" ? { documentType: docType } : {}),
     ...(audience !== "all" ? { audience } : {}),
     ...(status !== "all" ? { status } : {}),
+    page,
+    limit: PAGE_SIZE,
   };
 
-  const { data: docs = [], isLoading } = useListDocuments(params, {
-    query: { queryKey: getListDocumentsQueryKey(params), refetchInterval: 5000 },
+  const { data: docList, isLoading } = useListDocuments(params, {
+    query: { queryKey: getListDocumentsQueryKey(params), refetchInterval: 10000 },
   });
+
+  const docs = docList?.data ?? [];
+  const total = docList?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   useEffect(() => {
     if (highlightId && highlightRef.current) {
@@ -152,7 +166,9 @@ export default function DocumentLibrary() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Policy Library</h1>
-        <span className="text-sm text-slate-500">{docs.length} documents</span>
+        <span className="text-sm text-slate-500">
+          {total > 0 ? `${total} document${total !== 1 ? "s" : ""}` : ""}
+        </span>
       </div>
 
       <Card>
@@ -174,7 +190,7 @@ export default function DocumentLibrary() {
               <SelectContent>
                 {DOMAINS.map((d) => (
                   <SelectItem key={d} value={d}>
-                    {d === "all" ? "All Domains" : d.replace("-", " ")}
+                    {d === "all" ? "All Domains" : d.replace(/-/g, " ")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -210,7 +226,7 @@ export default function DocumentLibrary() {
               <SelectContent>
                 {STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>
-                    {s === "all" ? "All Status" : s}
+                    {s === "all" ? "All Status" : s.charAt(0).toUpperCase() + s.slice(1)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -227,7 +243,11 @@ export default function DocumentLibrary() {
         <div className="text-center py-16 text-slate-400">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p className="text-lg font-medium">No documents found</p>
-          <p className="text-sm mt-1">Upload policy documents to get started</p>
+          <p className="text-sm mt-1">
+            {total === 0 && !search && domain === "all" && status === "all"
+              ? "Upload policy documents to get started"
+              : "Try adjusting your filters"}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -277,7 +297,7 @@ export default function DocumentLibrary() {
                           <div className="flex items-center gap-1 mt-1.5">
                             <Clock className="w-3 h-3 text-slate-300" />
                             <span className="text-xs text-slate-400">
-                              Uploaded {formatDate(doc.createdAt)}
+                              Added {formatDate(doc.createdAt)}
                             </span>
                           </div>
                         </div>
@@ -285,7 +305,7 @@ export default function DocumentLibrary() {
                       <div className="flex items-center gap-1.5 shrink-0">
                         {doc.confidenceScore != null && (
                           <span className="text-xs text-slate-400 mr-1">
-                            {Math.round(doc.confidenceScore * 100)}% confidence
+                            {Math.round(doc.confidenceScore * 100)}%
                           </span>
                         )}
                         <Button
@@ -324,8 +344,13 @@ export default function DocumentLibrary() {
                           variant="ghost"
                           size="icon"
                           className="text-slate-400 hover:text-red-500"
-                          onClick={() => deleteMut.mutate({ id: doc.id })}
+                          onClick={() => {
+                            if (confirm(`Delete "${doc.title ?? doc.filename}"? This cannot be undone.`)) {
+                              deleteMut.mutate({ id: doc.id });
+                            }
+                          }}
                           disabled={deleteMut.isPending}
+                          title="Delete document"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -336,6 +361,40 @@ export default function DocumentLibrary() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-sm text-slate-500">
+            Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="gap-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </Button>
+            <span className="text-sm text-slate-600 px-2">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="gap-1"
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       )}
     </div>
