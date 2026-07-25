@@ -145,7 +145,11 @@ export async function ragChat(
     chunkParams.push(domainFilter);
   }
 
-  // Run wiki and chunk searches in parallel
+  // Run wiki-section and chunk searches in parallel.
+  // Wiki sections have individual embeddings so a narrow question retrieves
+  // only the relevant section (e.g. "Procedures") rather than averaging the
+  // entire policy page. We fetch up to 4 section matches then cap to sections
+  // from at most 2 distinct documents to maintain source diversity.
   const [chunkResult, wikiResult] = await Promise.all([
     pool.query<{
       id: number;
@@ -179,32 +183,37 @@ export async function ragChat(
     ),
     pool.query<{
       id: number;
+      wiki_page_id: number;
       document_id: number;
+      heading: string;
+      content: string;
       title: string;
       summary: string | null;
-      markdown_content: string;
       filename: string;
       issuing_authority: string | null;
       similarity: number;
     }>(
       `
       SELECT
-        wp.id,
-        wp.document_id,
+        ws.id,
+        ws.wiki_page_id,
+        ws.document_id,
+        ws.heading,
+        ws.content,
         wp.title,
         wp.summary,
-        wp.markdown_content,
         d.filename,
         d.issuing_authority,
-        1 - (wp.embedding <=> $1::vector) AS similarity
-      FROM wiki_pages wp
-      INNER JOIN documents d ON wp.document_id = d.id
-      WHERE wp.embedding IS NOT NULL
-        AND 1 - (wp.embedding <=> $1::vector) >= $2
-      ORDER BY wp.embedding <=> $1::vector
-      LIMIT $3
+        1 - (ws.embedding <=> $1::vector) AS similarity
+      FROM wiki_sections ws
+      INNER JOIN wiki_pages wp ON ws.wiki_page_id = wp.id
+      INNER JOIN documents d ON ws.document_id = d.id
+      WHERE ws.embedding IS NOT NULL
+        AND 1 - (ws.embedding <=> $1::vector) >= $2
+      ORDER BY ws.embedding <=> $1::vector
+      LIMIT 4
       `,
-      [embeddingLiteral, WIKI_SIMILARITY_THRESHOLD, 3]
+      [embeddingLiteral, WIKI_SIMILARITY_THRESHOLD]
     ),
   ]);
 
@@ -217,27 +226,25 @@ export async function ragChat(
     })
     .slice(0, maxSources);
 
-  // Apply scope filter to wiki results
-  const scoredWiki = wikiResult.rows
-    .filter((w) => {
-      if (scopeFilter === "department" && !isDepartmentPolicy(w.issuing_authority)) return false;
-      if (scopeFilter === "school" && isDepartmentPolicy(w.issuing_authority)) return false;
-      return true;
-    })
-    .slice(0, 2);
+  // Apply scope filter to wiki sections, then cap to sections from at most
+  // 2 distinct documents so one policy can't dominate the wiki context window.
+  const wikiSeenDocIds = new Set<number>();
+  const scoredWiki = wikiResult.rows.filter((w) => {
+    if (scopeFilter === "department" && !isDepartmentPolicy(w.issuing_authority)) return false;
+    if (scopeFilter === "school" && isDepartmentPolicy(w.issuing_authority)) return false;
+    if (wikiSeenDocIds.size >= 2 && !wikiSeenDocIds.has(w.document_id)) return false;
+    wikiSeenDocIds.add(w.document_id);
+    return true;
+  });
 
   if (scoredChunks.length === 0 && scoredWiki.length === 0) {
     return { answer: fallbackMessage, citations: [] };
   }
 
-  // Build combined context — wiki first (structure), then chunks (evidence)
+  // Build combined context — wiki sections first (structure), then verbatim chunks (evidence).
+  // Each section has its own heading so Claude can cite the specific part of the policy.
   const wikiContext = scoredWiki
-    .map((w, i) => {
-      const excerpt = w.summary
-        ? `${w.summary}\n\n${w.markdown_content.slice(0, 1500)}`
-        : w.markdown_content.slice(0, 2000);
-      return `[W${i + 1}] Wiki summary for "${w.title}" (doc #${w.document_id}):\n${excerpt}`;
-    })
+    .map((w, i) => `[W${i + 1}] From "${w.title}" — ${w.heading}:\n${w.content.slice(0, 1_200)}`)
     .join("\n\n---\n\n");
 
   const chunkContext = scoredChunks
@@ -320,7 +327,9 @@ export async function ragChat(
     documentId: scoredWiki[i].document_id,
     title: scoredWiki[i].title,
     filename: scoredWiki[i].filename,
-    excerpt: scoredWiki[i].summary ?? scoredWiki[i].markdown_content.slice(0, 200),
+    // Use the section heading + opening content as the excerpt so users can
+    // see which part of the policy was cited (more informative than a one-line summary).
+    excerpt: `${scoredWiki[i].heading}: ${scoredWiki[i].content.slice(0, 160)}`,
     sourceType: "wiki" as const,
   }));
 

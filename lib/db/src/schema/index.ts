@@ -1,6 +1,7 @@
 export * from "./documents";
 export * from "./documentChunks";
 export * from "./wikiPages";
+export * from "./wikiSections";
 export * from "./chatSessions";
 export * from "./chatMessages";
 export * from "./settings";
