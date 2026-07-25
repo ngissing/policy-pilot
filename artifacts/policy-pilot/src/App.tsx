@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { Switch, Route, Router as WouterRouter, Link, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ClerkProvider,
   UserButton,
@@ -32,6 +32,8 @@ import {
   Settings,
   Globe,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 const queryClient = new QueryClient({
@@ -54,7 +56,13 @@ const NAV_ITEMS = [
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar() {
+function Sidebar({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const [location] = useLocation();
   const { user } = useUser();
 
@@ -64,50 +72,156 @@ function Sidebar() {
     "Account";
 
   return (
-    <aside className="w-56 shrink-0 bg-slate-900 min-h-screen flex flex-col">
-      <div className="px-5 py-5 border-b border-slate-800">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
+    <aside
+      className={cn(
+        "shrink-0 bg-slate-900 min-h-screen flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden",
+        collapsed ? "w-[3.5rem]" : "w-56"
+      )}
+    >
+      {/* Logo */}
+      <div
+        className={cn(
+          "border-b border-slate-800 transition-all duration-200",
+          collapsed ? "px-3 py-5" : "px-5 py-5"
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center",
+            collapsed ? "justify-center" : "gap-2.5"
+          )}
+        >
+          <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <p className="text-white font-bold text-sm leading-tight">PolicyPilot</p>
-            <p className="text-slate-400 text-xs">K-12 Policy Intelligence</p>
+          <div
+            className={cn(
+              "overflow-hidden transition-all duration-200",
+              collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+            )}
+          >
+            <p className="text-white font-bold text-sm leading-tight whitespace-nowrap">
+              PolicyPilot
+            </p>
+            <p className="text-slate-400 text-xs whitespace-nowrap">
+              K-12 Policy Intelligence
+            </p>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      {/* Nav */}
+      <nav
+        className={cn(
+          "flex-1 py-4 space-y-0.5 transition-all duration-200",
+          collapsed ? "px-2" : "px-3"
+        )}
+      >
         {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
-          const active = path === "/" ? location === "/" : location.startsWith(path);
-          return (
+          const active =
+            path === "/" ? location === "/" : location.startsWith(path);
+          const link = (
             <Link
-              key={path}
               href={path}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center rounded-lg text-sm font-medium transition-colors",
+                collapsed
+                  ? "justify-center px-2 py-2"
+                  : "gap-3 px-3 py-2",
                 active
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white"
               )}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              {label}
+              <span
+                className={cn(
+                  "overflow-hidden whitespace-nowrap transition-all duration-200",
+                  collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                )}
+              >
+                {label}
+              </span>
             </Link>
           );
+
+          if (collapsed) {
+            return (
+              <Tooltip key={path} delayDuration={100}>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                  {label}
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+
+          return <div key={path}>{link}</div>;
         })}
       </nav>
 
-      <div className="px-4 py-4 border-t border-slate-800">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* Collapse toggle */}
+      <div
+        className={cn(
+          "border-t border-slate-800 transition-all duration-200",
+          collapsed ? "px-2 py-2" : "px-3 py-2"
+        )}
+      >
+        <Tooltip delayDuration={100}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onToggle}
+              className={cn(
+                "w-full flex items-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors text-sm py-2",
+                collapsed ? "justify-center px-2" : "gap-3 px-3"
+              )}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <ChevronRight className="w-4 h-4 shrink-0" />
+              ) : (
+                <>
+                  <ChevronLeft className="w-4 h-4 shrink-0" />
+                  <span className="overflow-hidden whitespace-nowrap">
+                    Collapse
+                  </span>
+                </>
+              )}
+            </button>
+          </TooltipTrigger>
+          {collapsed && (
+            <TooltipContent side="right" sideOffset={8}>
+              Expand sidebar
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </div>
+
+      {/* User */}
+      <div
+        className={cn(
+          "pb-4 border-t border-slate-800 transition-all duration-200",
+          collapsed ? "px-3 pt-3" : "px-4 pt-4"
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center min-w-0",
+            collapsed ? "justify-center" : "gap-3"
+          )}
+        >
           <UserButton
             appearance={{
-              elements: {
-                userButtonAvatarBox: "w-8 h-8",
-              },
+              elements: { userButtonAvatarBox: "w-8 h-8" },
             }}
           />
-          <span className="text-slate-300 text-xs truncate" title={displayName}>
+          <span
+            className={cn(
+              "text-slate-300 text-xs truncate transition-all duration-200",
+              collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+            )}
+            title={displayName}
+          >
             {displayName}
           </span>
         </div>
@@ -117,10 +231,28 @@ function Sidebar() {
 }
 
 function AppShell() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("sidebar-collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
-      <main className="flex-1 p-6 max-w-5xl">
+      <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+      <main className="flex-1 p-6 min-w-0">
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/library" component={DocumentLibrary} />
@@ -139,10 +271,6 @@ function AppShell() {
 
 function ClerkTokenSync() {
   const { getToken, isSignedIn } = useAuth();
-  // useLayoutEffect runs before React Query's microtask-scheduled fetches,
-  // so the token getter is guaranteed to be set before any API call fires.
-  // skipCache: true ensures a fresh JWT is fetched on every API call,
-  // preventing 401s when the 60-second Clerk token is near expiry.
   useLayoutEffect(() => {
     if (!isSignedIn) {
       setAuthTokenGetter(null);
