@@ -28,6 +28,7 @@ interface Citation {
   documentId: number;
   filename: string;
   excerpt: string;
+  sourceUrl?: string | null;
 }
 
 interface ChatMessage {
@@ -127,7 +128,13 @@ function AssistantBubble({
               <Card
                 key={i}
                 className="border-slate-100 cursor-pointer hover:border-blue-200 hover:shadow-sm transition-all"
-                onClick={() => navigate(`/library?highlight=${c.documentId}`)}
+                onClick={() => {
+                  if (c.sourceUrl) {
+                    window.open(c.sourceUrl, "_blank", "noopener,noreferrer");
+                  } else {
+                    navigate(`/library?highlight=${c.documentId}`);
+                  }
+                }}
               >
                 <CardContent className="py-2 px-3">
                   <div className="flex items-start gap-2">

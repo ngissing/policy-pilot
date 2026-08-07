@@ -22,6 +22,7 @@ export interface Citation {
   title: string | null;
   filename: string;
   excerpt: string;
+  sourceUrl?: string | null;
   sourceType?: "wiki" | "chunk";
   wikiSection?: string;
 }
@@ -56,6 +57,7 @@ interface ChunkRow {
   title: string | null;
   issuing_authority: string | null;
   policy_domain: string | null;
+  source_url: string | null;
   similarity: number;
 }
 
@@ -69,6 +71,7 @@ interface WikiRow {
   summary: string | null;
   filename: string;
   issuing_authority: string | null;
+  source_url: string | null;
   similarity: number;
 }
 
@@ -119,6 +122,7 @@ async function prepareRagContext(
         d.title,
         d.issuing_authority,
         d.policy_domain,
+        d.source_url,
         1 - (dc.embedding <=> $1::vector) AS similarity
       FROM document_chunks dc
       INNER JOIN documents d ON dc.document_id = d.id
@@ -143,6 +147,7 @@ async function prepareRagContext(
         wp.summary,
         d.filename,
         d.issuing_authority,
+        d.source_url,
         1 - (ws.embedding <=> $1::vector) AS similarity
       FROM wiki_sections ws
       INNER JOIN wiki_pages wp ON ws.wiki_page_id = wp.id
@@ -269,6 +274,7 @@ function finalizeRagResult(responseText: string, ctx: PreparedRagContext): RagRe
     title: scoredWiki[i].title,
     filename: scoredWiki[i].filename,
     excerpt: `${scoredWiki[i].heading}: ${scoredWiki[i].content.slice(0, 160)}`,
+    sourceUrl: scoredWiki[i].source_url,
     sourceType: "wiki" as const,
   }));
 
@@ -277,6 +283,7 @@ function finalizeRagResult(responseText: string, ctx: PreparedRagContext): RagRe
     title: scoredChunks[i].title ?? null,
     filename: scoredChunks[i].filename,
     excerpt: scoredChunks[i].content.slice(0, 200),
+    sourceUrl: scoredChunks[i].source_url,
     sourceType: "chunk" as const,
   }));
 
