@@ -44,9 +44,9 @@ function buildAnthropicProvider(): AiProvider {
   return {
     name: "cloud",
 
-    async generateText(system, messages, maxTokens = 2048) {
+    async generateText(system, messages, maxTokens = 8192) {
       const response = await anthropic.messages.create({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: maxTokens,
         system,
         messages: messages as Parameters<typeof anthropic.messages.create>[0]["messages"],
@@ -55,10 +55,10 @@ function buildAnthropicProvider(): AiProvider {
       return block?.type === "text" ? block.text : "";
     },
 
-    async streamText(system, messages, { maxTokens = 2048, onToken }) {
+    async streamText(system, messages, { maxTokens = 8192, onToken }) {
       let full = "";
       const stream = anthropic.messages.stream({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-haiku-4-5",
         max_tokens: maxTokens,
         system,
         messages: messages as Parameters<typeof anthropic.messages.create>[0]["messages"],

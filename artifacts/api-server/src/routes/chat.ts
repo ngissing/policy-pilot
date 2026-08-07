@@ -212,7 +212,7 @@ router.post("/sessions/:id/messages/stream", async (req, res) => {
 
     const { answer, citations } = await ragChatStream(
       question,
-      history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+      history.slice(-20).map((m) => ({ role: m.role, content: m.content })),
       { ...ragOptions, scopeFilter, domainFilter },
       (text) => send({ type: "token", text })
     );
@@ -289,7 +289,7 @@ router.post("/sessions/:id/messages", async (req, res) => {
 
     const { answer, citations } = await ragChat(
       question,
-      history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+      history.slice(-20).map((m) => ({ role: m.role, content: m.content })),
       { ...ragOptions, scopeFilter, domainFilter }
     );
 

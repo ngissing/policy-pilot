@@ -276,7 +276,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
             >
               <X className="w-4 h-4" />
             </button>
-            <SignIn routing="hash" afterSignInUrl="/" />
+            <SignIn routing="hash" forceRedirectUrl="/" />
           </div>
         </div>
       )}

@@ -109,20 +109,23 @@ export default function DraftPage() {
           if (line.startsWith("event: ")) {
             event = line.slice(7).trim();
           } else if (line.startsWith("data: ")) {
+            let payload: Record<string, unknown>;
             try {
-              const payload = JSON.parse(line.slice(6));
-              if (event === "meta") {
-                setDraftMeta(payload as DraftMeta);
-              } else if (event === "token") {
-                setStreamingText((prev) => prev + (payload.text ?? ""));
-              } else if (event === "done") {
-                setFinalDraft(payload.text ?? "");
-                setStreamingText("");
-              } else if (event === "error") {
-                throw new Error(payload.error ?? "Generation failed");
-              }
-            } catch (parseErr) {
-              if (event !== "token") console.warn("SSE parse error", parseErr);
+              payload = JSON.parse(line.slice(6)) as Record<string, unknown>;
+            } catch {
+              event = "";
+              continue;
+            }
+            // Handle error OUTSIDE the JSON parse try-catch so it propagates correctly
+            if (event === "error") {
+              throw new Error((payload.error as string) ?? "Generation failed");
+            } else if (event === "meta") {
+              setDraftMeta(payload as DraftMeta);
+            } else if (event === "token") {
+              setStreamingText((prev) => prev + ((payload.text as string) ?? ""));
+            } else if (event === "done") {
+              setFinalDraft((payload.text as string) ?? "");
+              setStreamingText("");
             }
             event = "";
           }
