@@ -50,6 +50,27 @@ export async function apiBlob(path: string): Promise<{ blob: Blob; filename: str
   return { blob, filename };
 }
 
+/**
+ * Returns the raw Response for a streaming endpoint (SSE / NDJSON).
+ * Throws if the server responds with a non-2xx status.
+ */
+export async function apiFetchStream(path: string, options?: RequestInit): Promise<Response> {
+  const auth = await authHeaders();
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...auth,
+      ...(options?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((body as { error?: string }).error ?? res.statusText);
+  }
+  return res;
+}
+
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {

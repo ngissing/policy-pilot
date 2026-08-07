@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { chatSessions, chatMessages, appSettings } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
-import { ragChat, type RagOptions } from "../lib/rag.js";
+import { ragChat, ragChatStream, type RagOptions } from "../lib/rag.js";
 import { logger } from "../lib/logger.js";
 import { requireAuth, getAuth } from "../middlewares/requireAuth.js";
 
@@ -149,6 +149,94 @@ router.get("/sessions/:id/messages", async (req, res) => {
   } catch (err) {
     logger.error(err, "Error fetching messages");
     res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
+
+// POST /chat/sessions/:id/messages/stream — Server-Sent Events streaming response
+router.post("/sessions/:id/messages/stream", async (req, res) => {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const sessionId = parseInt(req.params.id, 10);
+  if (isNaN(sessionId)) {
+    res.status(400).json({ error: "Invalid session id" });
+    return;
+  }
+  const question: string =
+    typeof req.body?.question === "string" ? req.body.question.trim() : "";
+  if (!question) {
+    res.status(400).json({ error: "Question is required" });
+    return;
+  }
+
+  const [session] = await db
+    .select()
+    .from(chatSessions)
+    .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.userId, userId)));
+  if (!session) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  // Switch to SSE before any async work so the client starts receiving immediately
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering if present
+  res.flushHeaders();
+
+  const send = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    await db.insert(chatMessages).values({ sessionId, role: "user", content: question });
+
+    const history = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(chatMessages.createdAt);
+
+    const ragOptions = await loadRagOptions();
+
+    const scopeFilter =
+      typeof req.body?.scopeFilter === "string" &&
+      ["all", "school", "department"].includes(req.body.scopeFilter)
+        ? (req.body.scopeFilter as "all" | "school" | "department")
+        : "all";
+    const domainFilter =
+      typeof req.body?.domainFilter === "string" ? req.body.domainFilter : "all";
+
+    const { answer, citations } = await ragChatStream(
+      question,
+      history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+      { ...ragOptions, scopeFilter, domainFilter },
+      (text) => send({ type: "token", text })
+    );
+
+    const [assistantMsg] = await db
+      .insert(chatMessages)
+      .values({ sessionId, role: "assistant", content: answer, citations })
+      .returning();
+
+    const isFirstExchange = history.filter((m) => m.role === "user").length <= 1;
+    const newTitle = isFirstExchange
+      ? question.slice(0, 60) + (question.length > 60 ? "…" : "")
+      : session.title;
+    await db
+      .update(chatSessions)
+      .set({ title: newTitle, updatedAt: new Date() })
+      .where(eq(chatSessions.id, sessionId));
+
+    send({ type: "done", messageId: assistantMsg.id, citations, finalAnswer: answer });
+    res.end();
+  } catch (err) {
+    logger.error(err, "Error in streaming chat");
+    send({ type: "error", message: "Failed to generate response" });
+    res.end();
   }
 });
 
