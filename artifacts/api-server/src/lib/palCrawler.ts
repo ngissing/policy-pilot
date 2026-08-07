@@ -633,6 +633,20 @@ async function importPalPage(
     logger.warn({ slug, err }, "Wiki page generation failed")
   );
 
+  // Detect lastmod changes for the alert system
+  const [existingSlug] = await db
+    .select({ sitemapLastmod: palSlugs.sitemapLastmod })
+    .from(palSlugs)
+    .where(eq(palSlugs.slug, slug));
+
+  const lastmodChanged = !!(
+    existingSlug?.sitemapLastmod &&
+    sitemapLastmod &&
+    existingSlug.sitemapLastmod !== sitemapLastmod
+  );
+
+  const now = new Date();
+
   // Update slug index
   await db
     .insert(palSlugs)
@@ -640,7 +654,7 @@ async function importPalPage(
       slug,
       title,
       category: metadata.categories[0] ?? null,
-      lastCrawled: new Date(),
+      lastCrawled: now,
       sitemapLastmod,
       policyLastUpdated: metadata.policyLastUpdated,
       reviewedDate: metadata.reviewedDate,
@@ -650,13 +664,17 @@ async function importPalPage(
       set: {
         title,
         category: metadata.categories[0] ?? null,
-        lastCrawled: new Date(),
+        lastCrawled: now,
         sitemapLastmod,
         policyLastUpdated: metadata.policyLastUpdated,
         reviewedDate: metadata.reviewedDate,
         isRetired: false,
         retiredAt: null,
-        updatedAt: new Date(),
+        updatedAt: now,
+        // When lastmod has advanced, raise an alert and clear any previous acknowledgement
+        ...(lastmodChanged
+          ? { changeDetectedAt: now, changeAcknowledgedAt: null }
+          : {}),
       },
     });
 

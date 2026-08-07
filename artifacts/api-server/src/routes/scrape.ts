@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { scrapeJobs, palSlugs } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, isNotNull, isNull, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth.js";
 import { runScrapeJob } from "../lib/scraper.js";
 import {
@@ -233,6 +233,63 @@ router.post("/pal/start", async (req, res) => {
   } catch (err) {
     logger.error(err, "Error creating PAL job");
     res.status(500).json({ error: "Failed to create PAL job" });
+  }
+});
+
+// ─── PAL change-alert routes ───────────────────────────────────────────────────
+
+/**
+ * GET /api/scrape/pal/alerts
+ * Returns all pal_slugs rows where a lastmod change was detected but not yet acknowledged.
+ */
+router.get("/pal/alerts", async (_req, res) => {
+  try {
+    const alerts = await db
+      .select({
+        id: palSlugs.id,
+        slug: palSlugs.slug,
+        title: palSlugs.title,
+        category: palSlugs.category,
+        sitemapLastmod: palSlugs.sitemapLastmod,
+        policyLastUpdated: palSlugs.policyLastUpdated,
+        changeDetectedAt: palSlugs.changeDetectedAt,
+        changeAcknowledgedAt: palSlugs.changeAcknowledgedAt,
+      })
+      .from(palSlugs)
+      .where(
+        and(
+          isNotNull(palSlugs.changeDetectedAt),
+          isNull(palSlugs.changeAcknowledgedAt)
+        )
+      )
+      .orderBy(desc(palSlugs.changeDetectedAt));
+    res.json(alerts);
+  } catch (err) {
+    logger.error(err, "Error fetching PAL alerts");
+    res.status(500).json({ error: "Failed to fetch alerts" });
+  }
+});
+
+/**
+ * POST /api/scrape/pal/alerts/:slug/acknowledge
+ * Marks a change alert as acknowledged so it no longer appears in the badge count.
+ */
+router.post("/pal/alerts/:slug/acknowledge", async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const [updated] = await db
+      .update(palSlugs)
+      .set({ changeAcknowledgedAt: new Date(), updatedAt: new Date() })
+      .where(eq(palSlugs.slug, slug))
+      .returning({ slug: palSlugs.slug });
+    if (!updated) {
+      res.status(404).json({ error: "Slug not found" });
+      return;
+    }
+    res.json({ acknowledged: true });
+  } catch (err) {
+    logger.error(err, "Error acknowledging PAL alert");
+    res.status(500).json({ error: "Failed to acknowledge alert" });
   }
 });
 

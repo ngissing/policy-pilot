@@ -10,7 +10,7 @@ import {
   useUser,
 } from "@clerk/react";
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
-import { setApiTokenGetter } from "@/lib/api";
+import { setApiTokenGetter, apiFetch } from "@/lib/api";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import DocumentLibrary from "@/pages/DocumentLibrary";
@@ -21,6 +21,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import ScrapePage from "@/pages/ScrapePage";
 import LandingPage from "@/pages/LandingPage";
 import WikiPage from "@/pages/WikiPage";
+import DraftPage from "@/pages/DraftPage";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -34,6 +35,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  PenLine,
 } from "lucide-react";
 
 const queryClient = new QueryClient({
@@ -51,17 +53,36 @@ const NAV_ITEMS = [
   { path: "/library", label: "Policy Library", icon: BookOpen },
   { path: "/upload", label: "Upload", icon: Upload },
   { path: "/chat", label: "Chat", icon: MessageSquare },
+  { path: "/draft", label: "Policy Drafter", icon: PenLine },
   { path: "/review", label: "Review Queue", icon: ClipboardCheck },
-  { path: "/scrape", label: "Web Scraper", icon: Globe },
+  { path: "/scrape", label: "Web Scraper", icon: Globe, badgeKey: "pal" as const },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
+
+// ─── Sidebar ───────────────────────────────────────────────────────────────────
+
+function NavBadge({ count, collapsed }: { count: number; collapsed: boolean }) {
+  if (count === 0) return null;
+  if (collapsed) {
+    return (
+      <span className="absolute top-1 right-1 w-2 h-2 bg-amber-400 rounded-full" />
+    );
+  }
+  return (
+    <span className="ml-auto shrink-0 bg-amber-400 text-amber-900 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+      {count}
+    </span>
+  );
+}
 
 function Sidebar({
   collapsed,
   onToggle,
+  palAlertCount,
 }: {
   collapsed: boolean;
   onToggle: () => void;
+  palAlertCount: number;
 }) {
   const [location] = useLocation();
   const { user } = useUser();
@@ -117,14 +138,16 @@ function Sidebar({
           collapsed ? "px-2" : "px-3"
         )}
       >
-        {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
+        {NAV_ITEMS.map(({ path, label, icon: Icon, badgeKey }) => {
           const active =
             path === "/" ? location === "/" : location.startsWith(path);
+          const badge = badgeKey === "pal" ? palAlertCount : 0;
+
           const link = (
             <Link
               href={path}
               className={cn(
-                "flex items-center rounded-lg text-sm font-medium transition-colors",
+                "relative flex items-center rounded-lg text-sm font-medium transition-colors",
                 collapsed
                   ? "justify-center px-2 py-2"
                   : "gap-3 px-3 py-2",
@@ -136,12 +159,14 @@ function Sidebar({
               <Icon className="w-4 h-4 shrink-0" />
               <span
                 className={cn(
-                  "overflow-hidden whitespace-nowrap transition-all duration-200",
+                  "overflow-hidden whitespace-nowrap transition-all duration-200 flex-1",
                   collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
                 )}
               >
                 {label}
               </span>
+              {!collapsed && badge > 0 && <NavBadge count={badge} collapsed={false} />}
+              {collapsed && badge > 0 && <NavBadge count={badge} collapsed={true} />}
             </Link>
           );
 
@@ -151,6 +176,7 @@ function Sidebar({
                 <TooltipTrigger asChild>{link}</TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
                   {label}
+                  {badge > 0 && ` (${badge} update${badge !== 1 ? "s" : ""})`}
                 </TooltipContent>
               </Tooltip>
             );
@@ -230,6 +256,8 @@ function Sidebar({
   );
 }
 
+// ─── App shell ─────────────────────────────────────────────────────────────────
+
 function AppShell() {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -238,6 +266,8 @@ function AppShell() {
       return false;
     }
   });
+
+  const [palAlertCount, setPalAlertCount] = useState(0);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -249,15 +279,39 @@ function AppShell() {
     });
   };
 
+  // Poll PAL change alerts every 5 minutes
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAlerts() {
+      try {
+        const alerts = await apiFetch<{ id: number }[]>("/scrape/pal/alerts");
+        if (!cancelled) setPalAlertCount(alerts.length);
+      } catch {
+        // silently ignore — alerts are non-critical
+      }
+    }
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={toggleCollapsed}
+        palAlertCount={palAlertCount}
+      />
       <main className="flex-1 p-6 min-w-0">
         <Switch>
           <Route path="/" component={Dashboard} />
           <Route path="/library" component={DocumentLibrary} />
           <Route path="/upload" component={UploadPage} />
           <Route path="/chat" component={ChatPage} />
+          <Route path="/draft" component={DraftPage} />
           <Route path="/review" component={AdminQueue} />
           <Route path="/scrape" component={ScrapePage} />
           <Route path="/settings" component={SettingsPage} />
@@ -268,6 +322,8 @@ function AppShell() {
     </div>
   );
 }
+
+// ─── Auth / Clerk wiring ───────────────────────────────────────────────────────
 
 function ClerkTokenSync() {
   const { getToken, isSignedIn } = useAuth();

@@ -33,6 +33,13 @@ export const palSlugs = pgTable(
     /** True when the slug has disappeared from the live site */
     isRetired: boolean("is_retired").notNull().default(false),
     retiredAt: timestamp("retired_at", { withTimezone: true }),
+    /**
+     * Set when the sitemap lastmod advances past the stored value (i.e. DET updated
+     * this policy since the last crawl). Cleared when an admin acknowledges the alert.
+     */
+    changeDetectedAt: timestamp("change_detected_at", { withTimezone: true }),
+    /** Set when an admin dismisses the change alert. */
+    changeAcknowledgedAt: timestamp("change_acknowledged_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

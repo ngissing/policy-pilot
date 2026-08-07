@@ -5,6 +5,7 @@ import chatRouter from "./chat.js";
 import statsRouter from "./stats.js";
 import settingsRouter from "./settings.js";
 import scrapeRouter from "./scrape.js";
+import draftRouter from "./draft.js";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use("/chat", chatRouter);
 router.use("/stats", statsRouter);
 router.use("/settings", settingsRouter);
 router.use("/scrape", scrapeRouter);
+router.use("/draft", draftRouter);
 
 export default router;

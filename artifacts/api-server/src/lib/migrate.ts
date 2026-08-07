@@ -77,6 +77,22 @@ export async function runMigrations(): Promise<void> {
        ON document_chunks USING hnsw (embedding vector_cosine_ops)`
     );
     logger.info("vector index ready");
+
+    // ── app_settings: school profile + AI provider columns ─────────────────
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS school_name text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS school_type text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS school_state text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS student_count integer`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS school_values text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS principal_name text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS learning_frameworks text`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ai_provider text NOT NULL DEFAULT 'cloud'`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ollama_base_url text NOT NULL DEFAULT 'http://localhost:11434'`);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ollama_model text NOT NULL DEFAULT 'llama3.2'`);
+
+    // ── pal_slugs: change-alert tracking columns ───────────────────────────
+    await client.query(`ALTER TABLE pal_slugs ADD COLUMN IF NOT EXISTS change_detected_at timestamptz`);
+    await client.query(`ALTER TABLE pal_slugs ADD COLUMN IF NOT EXISTS change_acknowledged_at timestamptz`);
   } finally {
     client.release();
   }

@@ -3,10 +3,18 @@ import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Settings,
   MessageSquare,
@@ -19,16 +27,33 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
+  School,
+  Cpu,
+  Cloud,
+  HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppSettings {
   id: number;
+  // Chat
   responseLength: string;
   responseTone: string;
   maxSources: number;
   showFollowUpSuggestions: boolean;
   fallbackMessage: string;
+  // School profile
+  schoolName?: string | null;
+  schoolType?: string | null;
+  schoolState?: string | null;
+  studentCount?: number | null;
+  schoolValues?: string | null;
+  principalName?: string | null;
+  learningFrameworks?: string | null;
+  // AI provider
+  aiProvider: string;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
   updatedAt: string;
 }
 
@@ -48,6 +73,16 @@ const DEFAULTS: Omit<AppSettings, "id" | "updatedAt"> = {
   showFollowUpSuggestions: true,
   fallbackMessage:
     "I couldn't find a policy that covers this — consider uploading relevant documents.",
+  schoolName: null,
+  schoolType: null,
+  schoolState: null,
+  studentCount: null,
+  schoolValues: null,
+  principalName: null,
+  learningFrameworks: null,
+  aiProvider: "cloud",
+  ollamaBaseUrl: "http://localhost:11434",
+  ollamaModel: "llama3.2",
 };
 
 function OptionCard({
@@ -115,7 +150,6 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    // Check if a job is already running on mount
     apiFetch<RegenStatus>("/documents/wiki-regen-status")
       .then((status) => {
         setRegenStatus(status);
@@ -153,6 +187,16 @@ export default function SettingsPage() {
           maxSources: data.maxSources,
           showFollowUpSuggestions: data.showFollowUpSuggestions,
           fallbackMessage: data.fallbackMessage,
+          schoolName: data.schoolName ?? null,
+          schoolType: data.schoolType ?? null,
+          schoolState: data.schoolState ?? null,
+          studentCount: data.studentCount ?? null,
+          schoolValues: data.schoolValues ?? null,
+          principalName: data.principalName ?? null,
+          learningFrameworks: data.learningFrameworks ?? null,
+          aiProvider: data.aiProvider ?? "cloud",
+          ollamaBaseUrl: data.ollamaBaseUrl ?? "http://localhost:11434",
+          ollamaModel: data.ollamaModel ?? "llama3.2",
         });
         setLastSaved(new Date(data.updatedAt));
       })
@@ -194,10 +238,10 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Settings className="w-6 h-6 text-blue-600" />
-            Chat Settings
+            Settings
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Configure how the AI assistant responds to policy questions.
+            Configure PolicyPilot for your school.
             {lastSaved && (
               <span className="ml-2 text-slate-400">
                 Last saved {lastSaved.toLocaleTimeString()}
@@ -207,7 +251,211 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Response Length */}
+      {/* ── School Profile ──────────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <School className="w-4 h-4 text-blue-500" />
+            School Profile
+          </CardTitle>
+          <CardDescription>
+            Used by the Policy Drafter when generating school-specific documents. Kept
+            private — only shared with an offline AI model.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="schoolName">School name</Label>
+              <Input
+                id="schoolName"
+                value={settings.schoolName ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, schoolName: e.target.value || null }))
+                }
+                placeholder="e.g. Riverside Primary School"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="principalName">Principal</Label>
+              <Input
+                id="principalName"
+                value={settings.principalName ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, principalName: e.target.value || null }))
+                }
+                placeholder="e.g. Jane Smith"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label>School type</Label>
+              <Select
+                value={settings.schoolType ?? ""}
+                onValueChange={(v) =>
+                  setSettings((s) => ({ ...s, schoolType: v || null }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="primary">Primary</SelectItem>
+                  <SelectItem value="secondary">Secondary</SelectItem>
+                  <SelectItem value="p12">P–12</SelectItem>
+                  <SelectItem value="combined">Combined K–12</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>State / territory</Label>
+              <Select
+                value={settings.schoolState ?? ""}
+                onValueChange={(v) =>
+                  setSettings((s) => ({ ...s, schoolState: v || null }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {["VIC", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT"].map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="studentCount">Student enrolment</Label>
+              <Input
+                id="studentCount"
+                type="number"
+                min={1}
+                value={settings.studentCount ?? ""}
+                onChange={(e) =>
+                  setSettings((s) => ({
+                    ...s,
+                    studentCount: e.target.value ? parseInt(e.target.value, 10) : null,
+                  }))
+                }
+                placeholder="e.g. 450"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="schoolValues">School values / motto</Label>
+            <Input
+              id="schoolValues"
+              value={settings.schoolValues ?? ""}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, schoolValues: e.target.value || null }))
+              }
+              placeholder="e.g. Respect, Responsibility, Resilience"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="learningFrameworks">Learning frameworks in use</Label>
+            <Textarea
+              id="learningFrameworks"
+              value={settings.learningFrameworks ?? ""}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  learningFrameworks: e.target.value || null,
+                }))
+              }
+              rows={2}
+              placeholder="e.g. Visible Learning, Positive Behaviour Support (PBS), PLC model, IB Primary Years Programme"
+              className="text-sm resize-none"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── AI Provider ─────────────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-blue-500" />
+            AI Provider
+          </CardTitle>
+          <CardDescription>
+            Choose between the cloud AI (Anthropic Claude) for general policy questions, or a
+            local offline model (Ollama) for school-specific and sensitive topics. School
+            context in the Policy Drafter is only available in offline mode.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <OptionCard
+              selected={settings.aiProvider === "cloud"}
+              onClick={() => setSettings((s) => ({ ...s, aiProvider: "cloud" }))}
+              title="☁️ Cloud (Anthropic)"
+              description="Fast, high-quality. Best for general policy questions. School context unavailable."
+            />
+            <OptionCard
+              selected={settings.aiProvider === "offline"}
+              onClick={() => setSettings((s) => ({ ...s, aiProvider: "offline" }))}
+              title="💻 Offline (Ollama)"
+              description="Private local model. Required for school-specific policy drafting."
+            />
+          </div>
+
+          {settings.aiProvider === "offline" && (
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <p className="text-xs text-slate-500">
+                Ollama must be running on this machine.{" "}
+                <a
+                  href="https://ollama.com/download"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline"
+                >
+                  Download Ollama ↗
+                </a>
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ollamaBaseUrl">Ollama server URL</Label>
+                  <Input
+                    id="ollamaBaseUrl"
+                    value={settings.ollamaBaseUrl}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, ollamaBaseUrl: e.target.value }))
+                    }
+                    placeholder="http://localhost:11434"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ollamaModel">Model name</Label>
+                  <Input
+                    id="ollamaModel"
+                    value={settings.ollamaModel}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, ollamaModel: e.target.value }))
+                    }
+                    placeholder="e.g. llama3.2"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">
+                Recommended models:{" "}
+                <code className="bg-slate-100 px-1 rounded">llama3.2</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">mistral</code>,{" "}
+                <code className="bg-slate-100 px-1 rounded">gemma3</code>. Pull
+                with <code className="bg-slate-100 px-1 rounded">ollama pull &lt;model&gt;</code>.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Response Length ──────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -240,7 +488,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Response Tone */}
+      {/* ── Response Tone ────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -267,7 +515,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Max Sources */}
+      {/* ── Max Sources ──────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -298,7 +546,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Follow-up Suggestions */}
+      {/* ── Follow-up Suggestions ────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -326,7 +574,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Fallback Message */}
+      {/* ── Fallback Message ─────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -350,7 +598,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Wiki Knowledge Base */}
+      {/* ── Wiki Knowledge Base ──────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -380,7 +628,6 @@ export default function SettingsPage() {
               : "Fill Missing Wiki Pages"}
           </Button>
 
-          {/* Progress bar while running */}
           {regenStatus?.running && regenStatus.total > 0 && (
             <div className="space-y-1.5">
               <Progress
@@ -396,7 +643,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Completion summary */}
           {regenStatus && !regenStatus.running && regenStatus.finishedAt && (
             <div
               className={cn(
@@ -425,7 +671,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Actions */}
+      {/* ── Actions ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 pb-8">
         <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
           {saving ? (

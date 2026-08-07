@@ -6,7 +6,6 @@ import { requireAuth } from "../middlewares/requireAuth.js";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
-
 router.use(requireAuth);
 
 const DEFAULTS = {
@@ -16,6 +15,16 @@ const DEFAULTS = {
   showFollowUpSuggestions: true,
   fallbackMessage:
     "I couldn't find a policy that covers this — consider uploading relevant documents.",
+  schoolName: null as string | null,
+  schoolType: null as string | null,
+  schoolState: null as string | null,
+  studentCount: null as number | null,
+  schoolValues: null as string | null,
+  principalName: null as string | null,
+  learningFrameworks: null as string | null,
+  aiProvider: "cloud",
+  ollamaBaseUrl: "http://localhost:11434",
+  ollamaModel: "llama3.2",
 } as const;
 
 async function getOrCreateSettings() {
@@ -40,6 +49,7 @@ router.put("/", async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const patch: Record<string, unknown> = { updatedAt: new Date() };
 
+    // ─── Chat behaviour ───────────────────────────────────────────────────────
     if (
       typeof body.responseLength === "string" &&
       ["brief", "concise", "detailed"].includes(body.responseLength)
@@ -60,6 +70,66 @@ router.put("/", async (req, res) => {
     }
     if (typeof body.fallbackMessage === "string" && body.fallbackMessage.trim().length > 0) {
       patch.fallbackMessage = body.fallbackMessage.trim();
+    }
+
+    // ─── School profile ───────────────────────────────────────────────────────
+    if ("schoolName" in body) {
+      patch.schoolName =
+        typeof body.schoolName === "string" && body.schoolName.trim()
+          ? body.schoolName.trim()
+          : null;
+    }
+    if ("schoolType" in body) {
+      const valid = ["primary", "secondary", "p12", "combined", "other"];
+      patch.schoolType =
+        typeof body.schoolType === "string" && valid.includes(body.schoolType)
+          ? body.schoolType
+          : null;
+    }
+    if ("schoolState" in body) {
+      const valid = ["VIC", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT"];
+      patch.schoolState =
+        typeof body.schoolState === "string" && valid.includes(body.schoolState)
+          ? body.schoolState
+          : null;
+    }
+    if ("studentCount" in body) {
+      patch.studentCount =
+        typeof body.studentCount === "number" && body.studentCount > 0
+          ? Math.round(body.studentCount)
+          : null;
+    }
+    if ("schoolValues" in body) {
+      patch.schoolValues =
+        typeof body.schoolValues === "string" && body.schoolValues.trim()
+          ? body.schoolValues.trim()
+          : null;
+    }
+    if ("principalName" in body) {
+      patch.principalName =
+        typeof body.principalName === "string" && body.principalName.trim()
+          ? body.principalName.trim()
+          : null;
+    }
+    if ("learningFrameworks" in body) {
+      patch.learningFrameworks =
+        typeof body.learningFrameworks === "string" && body.learningFrameworks.trim()
+          ? body.learningFrameworks.trim()
+          : null;
+    }
+
+    // ─── AI provider ──────────────────────────────────────────────────────────
+    if (
+      typeof body.aiProvider === "string" &&
+      ["cloud", "offline"].includes(body.aiProvider)
+    ) {
+      patch.aiProvider = body.aiProvider;
+    }
+    if (typeof body.ollamaBaseUrl === "string" && body.ollamaBaseUrl.trim()) {
+      patch.ollamaBaseUrl = body.ollamaBaseUrl.trim();
+    }
+    if (typeof body.ollamaModel === "string" && body.ollamaModel.trim()) {
+      patch.ollamaModel = body.ollamaModel.trim();
     }
 
     const existing = await getOrCreateSettings();
