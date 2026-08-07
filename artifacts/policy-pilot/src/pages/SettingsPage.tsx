@@ -358,9 +358,9 @@ export default function SettingsPage() {
             Wiki Knowledge Base
           </CardTitle>
           <CardDescription>
-            Regenerate structured wiki pages for all uploaded documents. Useful after adding new
-            documents in bulk or after updating the wiki prompt. Processing runs in batches of 3 —
-            this may take a few minutes for large libraries.
+            Generates wiki pages for any documents that don't have one yet. Skips documents that
+            already have a wiki page, so re-running after an interrupted job only processes the
+            remainder — not the full library. Processing runs in batches of 3.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -376,8 +376,8 @@ export default function SettingsPage() {
               <RefreshCw className="w-4 h-4" />
             )}
             {regenStatus?.running
-              ? `Regenerating… ${regenStatus.done} / ${regenStatus.total}`
-              : "Regenerate All Wiki Pages"}
+              ? `Processing… ${regenStatus.done} / ${regenStatus.total} remaining`
+              : "Fill Missing Wiki Pages"}
           </Button>
 
           {/* Progress bar while running */}
@@ -388,7 +388,7 @@ export default function SettingsPage() {
                 className="h-2"
               />
               <p className="text-xs text-slate-500">
-                {regenStatus.done} of {regenStatus.total} documents processed
+                {regenStatus.done} of {regenStatus.total} missing wiki pages generated
                 {regenStatus.errors > 0 && (
                   <span className="text-amber-600 ml-2">· {regenStatus.errors} errors</span>
                 )}

@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { documents, documentChunks, wikiPages } from "@workspace/db";
-import { and, eq, ilike, isNull, lt, or, desc, count } from "drizzle-orm";
+import { and, eq, ilike, isNull, isNotNull, lt, or, desc, count } from "drizzle-orm";
 import { parseFile, getFileType, chunkText } from "../lib/fileParser.js";
 import { autoTagDocument } from "../lib/rag.js";
 import { upsertWikiPage } from "../lib/wiki.js";
@@ -270,7 +270,7 @@ router.get("/wiki-regen-status", (_req, res) => {
   res.json({ ...regenJob });
 });
 
-// POST /api/documents/regenerate-all-wikis — regenerate wiki for every document
+// POST /api/documents/regenerate-all-wikis — regenerate wiki for documents missing one
 router.post("/regenerate-all-wikis", async (_req, res) => {
   if (regenJob.running) {
     res.status(409).json({ error: "A regeneration job is already running.", ...regenJob });
@@ -278,10 +278,23 @@ router.post("/regenerate-all-wikis", async (_req, res) => {
   }
 
   try {
+    // Only select documents that have no wiki page yet (or an empty one).
+    // Documents that already have a valid wiki page are skipped so a re-run
+    // after a partial completion only processes the remainder, not the full set.
     const allDocs = await db
       .select({ id: documents.id, rawText: documents.rawText })
       .from(documents)
-      .where(isNull(documents.rawText).if(false)); // all rows
+      .leftJoin(wikiPages, eq(wikiPages.documentId, documents.id))
+      .where(
+        and(
+          isNotNull(documents.rawText),
+          or(
+            isNull(wikiPages.id),
+            isNull(wikiPages.markdownContent),
+            eq(wikiPages.markdownContent, "")
+          )
+        )
+      );
 
     const eligible = allDocs.filter((d) => d.rawText && d.rawText.length > 0);
 
