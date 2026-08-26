@@ -18,30 +18,51 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List all documents
  */
+
 export const ListDocumentsQueryParams = zod.object({
+  page: zod.coerce.number().min(1).optional(),
+  limit: zod.coerce.number().min(1).optional(),
   domain: zod.coerce.string().optional(),
   documentType: zod.coerce.string().optional(),
   audience: zod.coerce.string().optional(),
   status: zod.coerce.string().optional(),
+  resourceScope: zod
+    .enum(["school", "department", "external", "unknown"])
+    .optional(),
   search: zod.coerce.string().optional(),
 });
 
-export const ListDocumentsResponseItem = zod.object({
-  id: zod.number(),
-  filename: zod.string(),
-  title: zod.string().nullish(),
-  fileType: zod.string(),
-  issuingAuthority: zod.string().nullish(),
-  policyDomain: zod.string().nullish(),
-  documentType: zod.string().nullish(),
-  audience: zod.string().nullish(),
-  confidenceScore: zod.number().nullish(),
-  sourceUrl: zod.string().nullish(),
-  status: zod.string(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+export const ListDocumentsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.number(),
+      filename: zod.string(),
+      title: zod.string().nullish(),
+      fileType: zod.string(),
+      issuingAuthority: zod.string().nullish(),
+      policyDomain: zod.string().nullish(),
+      documentType: zod.string().nullish(),
+      audience: zod.string().nullish(),
+      confidenceScore: zod.number().nullish(),
+      sourceUrl: zod.string().nullish(),
+      resourceScope: zod
+        .union([
+          zod.literal("school"),
+          zod.literal("department"),
+          zod.literal("external"),
+          zod.literal("unknown"),
+          zod.literal(null),
+        ])
+        .nullish(),
+      status: zod.string(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
 });
-export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
 
 /**
  * @summary Upload one or more policy documents
@@ -50,6 +71,12 @@ export const uploadDocumentBodyFilesMax = 20;
 
 export const UploadDocumentBody = zod.object({
   files: zod.array(zod.instanceof(File)).max(uploadDocumentBodyFilesMax),
+  resourceScope: zod
+    .enum(["school", "department", "external", "unknown", "ai"])
+    .optional()
+    .describe(
+      "Applies to every uploaded file. Use ai to let PolicyPilot classify it.",
+    ),
 });
 
 /**
@@ -66,6 +93,15 @@ export const GetReviewQueueResponseItem = zod.object({
   audience: zod.string().nullish(),
   confidenceScore: zod.number().nullish(),
   sourceUrl: zod.string().nullish(),
+  resourceScope: zod
+    .union([
+      zod.literal("school"),
+      zod.literal("department"),
+      zod.literal("external"),
+      zod.literal("unknown"),
+      zod.literal(null),
+    ])
+    .nullish(),
   status: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -90,6 +126,15 @@ export const GetDocumentResponse = zod.object({
   audience: zod.string().nullish(),
   confidenceScore: zod.number().nullish(),
   sourceUrl: zod.string().nullish(),
+  resourceScope: zod
+    .union([
+      zod.literal("school"),
+      zod.literal("department"),
+      zod.literal("external"),
+      zod.literal("unknown"),
+      zod.literal(null),
+    ])
+    .nullish(),
   status: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -108,6 +153,9 @@ export const UpdateDocumentBody = zod.object({
   policyDomain: zod.string().optional(),
   documentType: zod.string().optional(),
   audience: zod.string().optional(),
+  resourceScope: zod
+    .enum(["school", "department", "external", "unknown"])
+    .optional(),
   status: zod.string().optional(),
 });
 
@@ -122,6 +170,15 @@ export const UpdateDocumentResponse = zod.object({
   audience: zod.string().nullish(),
   confidenceScore: zod.number().nullish(),
   sourceUrl: zod.string().nullish(),
+  resourceScope: zod
+    .union([
+      zod.literal("school"),
+      zod.literal("department"),
+      zod.literal("external"),
+      zod.literal("unknown"),
+      zod.literal(null),
+    ])
+    .nullish(),
   status: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

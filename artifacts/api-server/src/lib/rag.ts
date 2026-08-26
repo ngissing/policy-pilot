@@ -4,19 +4,6 @@ import { documentChunks, documents, wikiPages } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { computeEmbedding } from "./embeddings.js";
 
-const DEPT_KEYWORDS = [
-  "department", "ministry", "government", "board of education",
-  "authority", "directorate", "commission", "nsw education",
-  "vic education", "qld education", "sa education", "wa education",
-  "tas education", "nt education", "act education",
-];
-
-function isDepartmentPolicy(authority: string | null | undefined): boolean {
-  if (!authority) return false;
-  const lower = authority.toLowerCase();
-  return DEPT_KEYWORDS.some((kw) => lower.includes(kw));
-}
-
 export interface Citation {
   documentId: number;
   title: string | null;
@@ -41,6 +28,16 @@ export interface RagOptions {
   domainFilter?: string;
 }
 
+function matchesScope(
+  resourceScope: string | null | undefined,
+  scopeFilter: "all" | "school" | "department"
+): boolean {
+  if (scopeFilter === "all") return true;
+  // Legacy documents with null scope are unknown and should not appear in
+  // either narrow filter. They remain available through "All".
+  return resourceScope === scopeFilter;
+}
+
 const DEFAULT_FALLBACK =
   "I couldn't find a policy that covers this — consider uploading relevant documents.";
 
@@ -58,6 +55,7 @@ interface ChunkRow {
   issuing_authority: string | null;
   policy_domain: string | null;
   source_url: string | null;
+  resource_scope: string | null;
   similarity: number;
 }
 
@@ -72,6 +70,7 @@ interface WikiRow {
   filename: string;
   issuing_authority: string | null;
   source_url: string | null;
+  resource_scope: string | null;
   similarity: number;
 }
 
@@ -105,11 +104,23 @@ async function prepareRagContext(
   const queryEmbedding = await computeEmbedding(question);
   const embeddingLiteral = `[${queryEmbedding.join(",")}]`;
 
-  const domainCondition =
-    domainFilter && domainFilter !== "all" ? `AND d.policy_domain = $4` : "";
-
   const chunkParams: unknown[] = [embeddingLiteral, SIMILARITY_THRESHOLD, maxSources * 4];
-  if (domainFilter && domainFilter !== "all") chunkParams.push(domainFilter);
+  const chunkConditions: string[] = [];
+  if (domainFilter && domainFilter !== "all") {
+    chunkParams.push(domainFilter);
+    chunkConditions.push(`AND d.policy_domain = $${chunkParams.length}`);
+  }
+  if (scopeFilter !== "all") {
+    chunkParams.push(scopeFilter);
+    chunkConditions.push(`AND d.resource_scope = $${chunkParams.length}`);
+  }
+
+  const wikiParams: unknown[] = [embeddingLiteral, WIKI_SIMILARITY_THRESHOLD];
+  let wikiScopeCondition = "";
+  if (scopeFilter !== "all") {
+    wikiParams.push(scopeFilter);
+    wikiScopeCondition = `AND d.resource_scope = $${wikiParams.length}`;
+  }
 
   const [chunkResult, wikiResult] = await Promise.all([
     pool.query<ChunkRow>(
@@ -123,13 +134,14 @@ async function prepareRagContext(
         d.issuing_authority,
         d.policy_domain,
         d.source_url,
+        d.resource_scope,
         1 - (dc.embedding <=> $1::vector) AS similarity
       FROM document_chunks dc
       INNER JOIN documents d ON dc.document_id = d.id
       WHERE dc.embedding IS NOT NULL
         AND 1 - (dc.embedding <=> $1::vector) >= $2
         AND d.status != 'rejected'
-        ${domainCondition}
+        ${chunkConditions.join("\n        ")}
       ORDER BY dc.embedding <=> $1::vector
       LIMIT $3
       `,
@@ -148,6 +160,7 @@ async function prepareRagContext(
         d.filename,
         d.issuing_authority,
         d.source_url,
+        d.resource_scope,
         1 - (ws.embedding <=> $1::vector) AS similarity
       FROM wiki_sections ws
       INNER JOIN wiki_pages wp ON ws.wiki_page_id = wp.id
@@ -155,25 +168,21 @@ async function prepareRagContext(
       WHERE ws.embedding IS NOT NULL
         AND 1 - (ws.embedding <=> $1::vector) >= $2
         AND d.status != 'rejected'
+        ${wikiScopeCondition}
       ORDER BY ws.embedding <=> $1::vector
       LIMIT 4
       `,
-      [embeddingLiteral, WIKI_SIMILARITY_THRESHOLD]
+      wikiParams
     ),
   ]);
 
   const scoredChunks = chunkResult.rows
-    .filter((c) => {
-      if (scopeFilter === "department" && !isDepartmentPolicy(c.issuing_authority)) return false;
-      if (scopeFilter === "school" && isDepartmentPolicy(c.issuing_authority)) return false;
-      return true;
-    })
+    .filter((c) => matchesScope(c.resource_scope, scopeFilter))
     .slice(0, maxSources);
 
   const wikiSeenDocIds = new Set<number>();
   const scoredWiki = wikiResult.rows.filter((w) => {
-    if (scopeFilter === "department" && !isDepartmentPolicy(w.issuing_authority)) return false;
-    if (scopeFilter === "school" && isDepartmentPolicy(w.issuing_authority)) return false;
+    if (!matchesScope(w.resource_scope, scopeFilter)) return false;
     if (wikiSeenDocIds.size >= 2 && !wikiSeenDocIds.has(w.document_id)) return false;
     wikiSeenDocIds.add(w.document_id);
     return true;
@@ -328,6 +337,7 @@ export async function autoTagDocument(text: string): Promise<{
   policyDomain: string | null;
   documentType: string | null;
   audience: string | null;
+  resourceScope: "school" | "department" | "external" | "unknown";
   confidenceScore: number;
 }> {
   const excerpt = text.slice(0, 4000);
@@ -347,6 +357,7 @@ Return ONLY valid JSON with these exact fields:
   "policyDomain": "one of: student-wellbeing, curriculum, staff-hr, administration, safety, technology, finance, community, other, or null",
   "documentType": "one of: policy, procedure, guideline, framework, strategy, or null",
   "audience": "one of: staff, students, parents, all, or null",
+  "resourceScope": "one of: school, department, external, unknown",
   "confidenceScore": 0.0-1.0 float representing how confident you are in these tags
 }
 
@@ -368,6 +379,7 @@ ${excerpt}`,
       policyDomain?: unknown;
       documentType?: unknown;
       audience?: unknown;
+      resourceScope?: unknown;
       confidenceScore?: unknown;
     };
     return {
@@ -377,6 +389,13 @@ ${excerpt}`,
       policyDomain: typeof parsed.policyDomain === "string" ? parsed.policyDomain : null,
       documentType: typeof parsed.documentType === "string" ? parsed.documentType : null,
       audience: typeof parsed.audience === "string" ? parsed.audience : null,
+      resourceScope:
+        parsed.resourceScope === "school" ||
+        parsed.resourceScope === "department" ||
+        parsed.resourceScope === "external" ||
+        parsed.resourceScope === "unknown"
+          ? parsed.resourceScope
+          : "unknown",
       confidenceScore:
         typeof parsed.confidenceScore === "number"
           ? Math.max(0, Math.min(1, parsed.confidenceScore))
@@ -389,6 +408,7 @@ ${excerpt}`,
       policyDomain: null,
       documentType: null,
       audience: null,
+      resourceScope: "unknown",
       confidenceScore: 0.3,
     };
   }

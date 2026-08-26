@@ -585,6 +585,7 @@ async function importPalPage(
         documentType: tags.documentType,
         audience: tags.audience,
         confidenceScore: tags.confidenceScore,
+        resourceScope: "department",
         status,
         palMetadata: metadata as unknown,
         updatedAt: new Date(),
@@ -607,6 +608,7 @@ async function importPalPage(
         audience: tags.audience,
         confidenceScore: tags.confidenceScore,
         sourceUrl: pageUrl,
+        resourceScope: "department",
         status,
         palMetadata: metadata as unknown,
       })

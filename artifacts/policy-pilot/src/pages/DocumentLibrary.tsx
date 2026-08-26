@@ -55,6 +55,27 @@ const DOMAINS = [
 const DOC_TYPES = ["all", "policy", "procedure", "guideline", "framework", "strategy"];
 const AUDIENCES = ["all", "staff", "students", "parents"];
 const STATUSES = ["all", "approved", "pending", "rejected", "processing"];
+type ResourceScopeFilter = "all" | "school" | "department" | "external" | "unknown";
+const RESOURCE_SCOPES = [
+  { value: "all", label: "All sources" },
+  { value: "school", label: "School-specific" },
+  { value: "department", label: "Department / government" },
+  { value: "external", label: "External" },
+  { value: "unknown", label: "Unknown" },
+];
+
+function resourceScopeBadge(scope: string | null | undefined) {
+  if (scope === "school") {
+    return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 text-xs">School-specific</Badge>;
+  }
+  if (scope === "department") {
+    return <Badge className="bg-violet-50 text-violet-700 hover:bg-violet-50 text-xs">Department</Badge>;
+  }
+  if (scope === "external") {
+    return <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50 text-xs">External</Badge>;
+  }
+  return <Badge variant="outline" className="text-xs text-slate-500">Unknown source</Badge>;
+}
 
 function statusBadge(status: string) {
   if (status === "approved")
@@ -100,6 +121,7 @@ export default function DocumentLibrary() {
   const [docType, setDocType] = useState("all");
   const [audience, setAudience] = useState("all");
   const [status, setStatus] = useState("all");
+  const [resourceScope, setResourceScope] = useState<ResourceScopeFilter>("all");
   const [page, setPage] = useState(1);
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -109,7 +131,7 @@ export default function DocumentLibrary() {
   const highlightRef = useRef<HTMLDivElement | null>(null);
 
   // Reset to page 1 whenever filters change
-  useEffect(() => { setPage(1); }, [search, domain, docType, audience, status]);
+  useEffect(() => { setPage(1); }, [search, domain, docType, audience, status, resourceScope]);
 
   const params: ListDocumentsParams = {
     ...(search ? { search } : {}),
@@ -117,6 +139,7 @@ export default function DocumentLibrary() {
     ...(docType !== "all" ? { documentType: docType } : {}),
     ...(audience !== "all" ? { audience } : {}),
     ...(status !== "all" ? { status } : {}),
+    ...(resourceScope !== "all" ? { resourceScope } : {}),
     page,
     limit: PAGE_SIZE,
   };
@@ -231,6 +254,21 @@ export default function DocumentLibrary() {
                 ))}
               </SelectContent>
             </Select>
+            <Select
+              value={resourceScope}
+              onValueChange={(value) => setResourceScope(value as ResourceScopeFilter)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                {RESOURCE_SCOPES.map((scope) => (
+                  <SelectItem key={scope.value} value={scope.value}>
+                    {scope.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -244,7 +282,7 @@ export default function DocumentLibrary() {
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p className="text-lg font-medium">No documents found</p>
           <p className="text-sm mt-1">
-            {total === 0 && !search && domain === "all" && status === "all"
+            {total === 0 && !search && domain === "all" && status === "all" && resourceScope === "all"
               ? "Upload policy documents to get started"
               : "Try adjusting your filters"}
           </p>
@@ -288,6 +326,7 @@ export default function DocumentLibrary() {
                                 {doc.audience}
                               </Badge>
                             )}
+                            {resourceScopeBadge(doc.resourceScope)}
                             {doc.issuingAuthority && (
                               <span className="text-xs text-slate-500">
                                 {doc.issuingAuthority}

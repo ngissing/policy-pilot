@@ -6,6 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Upload,
   FileText,
   X,
@@ -38,6 +45,7 @@ interface DocumentMeta {
   audience?: string | null;
   confidenceScore?: number | null;
   title?: string | null;
+  resourceScope?: "school" | "department" | "external" | "unknown" | null;
 }
 
 interface FileState {
@@ -50,9 +58,50 @@ interface FileState {
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_MAX_ATTEMPTS = 20;
+type UploadResourceScope = "school" | "department" | "external" | "unknown" | "ai";
+
+const RESOURCE_SCOPE_OPTIONS: Array<{
+  value: UploadResourceScope;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "school",
+    label: "School-specific",
+    description: "Created for or by your school",
+  },
+  {
+    value: "department",
+    label: "Department or government",
+    description: "Issued by DET, a state department, or government body",
+  },
+  {
+    value: "external",
+    label: "Other external resource",
+    description: "From a provider, association, or other organisation",
+  },
+  {
+    value: "ai",
+    label: "Let AI suggest",
+    description: "PolicyPilot will suggest a scope from the document content",
+  },
+  {
+    value: "unknown",
+    label: "Not sure",
+    description: "Keep as unknown until someone reviews it",
+  },
+];
+
+function scopeLabel(scope: DocumentMeta["resourceScope"]): string {
+  if (scope === "school") return "School-specific";
+  if (scope === "department") return "Department";
+  if (scope === "external") return "External";
+  return "Unknown scope";
+}
 
 export default function UploadPage() {
   const [files, setFiles] = useState<FileState[]>([]);
+  const [resourceScope, setResourceScope] = useState<UploadResourceScope>("ai");
   const [isUploading, setIsUploading] = useState(false);
   const pollCountsRef = useRef<Map<number, number>>(new Map());
   const { toast } = useToast();
@@ -135,6 +184,7 @@ export default function UploadPage() {
       for (const fs of pending) {
         formData.append("files", fs.file);
       }
+      formData.append("resourceScope", resourceScope);
 
       const batch = await apiUpload<BatchUploadResponse>("/documents/upload", formData);
       const results: UploadResult[] = batch.results ?? [];
@@ -224,6 +274,34 @@ export default function UploadPage() {
 
       <Card>
         <CardContent className="pt-6">
+          <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Resource scope</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  This applies to every file in this upload batch.
+                </p>
+              </div>
+              <Select
+                value={resourceScope}
+                onValueChange={(value) => setResourceScope(value as UploadResourceScope)}
+              >
+                <SelectTrigger className="w-full sm:w-72 bg-white">
+                  <SelectValue placeholder="Choose resource scope" />
+                </SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_SCOPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div>
+                        <div>{option.label}</div>
+                        <div className="text-xs text-slate-500">{option.description}</div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div
             {...getRootProps()}
             className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
@@ -319,6 +397,11 @@ export default function UploadPage() {
                     {fs.meta.issuingAuthority && (
                       <Badge variant="outline" className="text-xs text-slate-500">
                         {fs.meta.issuingAuthority}
+                      </Badge>
+                    )}
+                    {fs.meta.resourceScope && (
+                      <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50 text-xs">
+                        {scopeLabel(fs.meta.resourceScope)}
                       </Badge>
                     )}
                   </div>

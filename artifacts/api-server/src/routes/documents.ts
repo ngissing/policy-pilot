@@ -38,6 +38,19 @@ const regenJob: RegenJob = {
 
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
+const STORED_RESOURCE_SCOPES = ["school", "department", "external", "unknown"] as const;
+const UPLOAD_RESOURCE_SCOPES = [...STORED_RESOURCE_SCOPES, "ai"] as const;
+
+type StoredResourceScope = (typeof STORED_RESOURCE_SCOPES)[number];
+type UploadResourceScope = (typeof UPLOAD_RESOURCE_SCOPES)[number];
+
+function isUploadResourceScope(value: string): value is UploadResourceScope {
+  return (UPLOAD_RESOURCE_SCOPES as readonly string[]).includes(value);
+}
+
+function isStoredResourceScope(value: string): value is StoredResourceScope {
+  return (STORED_RESOURCE_SCOPES as readonly string[]).includes(value);
+}
 
 router.get("/", async (req, res) => {
   try {
@@ -47,6 +60,10 @@ router.get("/", async (req, res) => {
     const audience = typeof query.audience === "string" ? query.audience : undefined;
     const status = typeof query.status === "string" ? query.status : undefined;
     const search = typeof query.search === "string" ? query.search : undefined;
+    const resourceScope =
+      typeof query.resourceScope === "string" && isStoredResourceScope(query.resourceScope)
+        ? query.resourceScope
+        : undefined;
 
     const rawPage = parseInt(typeof query.page === "string" ? query.page : "1", 10);
     const rawLimit = parseInt(typeof query.limit === "string" ? query.limit : String(PAGE_SIZE_DEFAULT), 10);
@@ -59,6 +76,7 @@ router.get("/", async (req, res) => {
       documentType ? eq(documents.documentType, documentType) : undefined,
       audience ? eq(documents.audience, audience) : undefined,
       status ? eq(documents.status, status) : undefined,
+      resourceScope ? eq(documents.resourceScope, resourceScope) : undefined,
       search
         ? or(
             ilike(documents.filename, `%${search}%`),
@@ -79,6 +97,7 @@ router.get("/", async (req, res) => {
       audience: documents.audience,
       confidenceScore: documents.confidenceScore,
       sourceUrl: documents.sourceUrl,
+        resourceScope: documents.resourceScope,
       status: documents.status,
       createdAt: documents.createdAt,
       updatedAt: documents.updatedAt,
@@ -117,6 +136,7 @@ router.get("/review-queue", async (req, res) => {
         policyDomain: documents.policyDomain,
         documentType: documents.documentType,
         audience: documents.audience,
+        resourceScope: documents.resourceScope,
         confidenceScore: documents.confidenceScore,
         status: documents.status,
         createdAt: documents.createdAt,
@@ -141,7 +161,10 @@ router.get("/review-queue", async (req, res) => {
   }
 });
 
-async function processUploadedFile(file: Express.Multer.File): Promise<{
+async function processUploadedFile(
+  file: Express.Multer.File,
+  selectedScope: UploadResourceScope
+): Promise<{
   id: number;
   filename: string;
   status: string;
@@ -160,6 +183,7 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
       filename: file.originalname,
       fileType,
       rawText,
+      resourceScope: selectedScope === "ai" ? "unknown" : selectedScope,
       status: "processing",
     })
     .returning();
@@ -182,6 +206,7 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
           policyDomain: tags.policyDomain,
           documentType: tags.documentType,
           audience: tags.audience,
+          resourceScope: selectedScope === "ai" ? tags.resourceScope : selectedScope,
           confidenceScore: tags.confidenceScore,
           status: newStatus,
           updatedAt: new Date(),
@@ -234,6 +259,16 @@ async function processUploadedFile(file: Express.Multer.File): Promise<{
 
 router.post("/upload", upload.array("files", 20), async (req, res) => {
   try {
+    const requestedScope =
+      typeof req.body?.resourceScope === "string" ? req.body.resourceScope : "ai";
+    if (!isUploadResourceScope(requestedScope)) {
+      res.status(400).json({
+        error:
+          "Invalid resourceScope. Use school, department, external, unknown, or ai.",
+      });
+      return;
+    }
+
     const uploadedFiles = req.files as Express.Multer.File[] | undefined;
     if (!uploadedFiles || uploadedFiles.length === 0) {
       res.status(400).json({ error: "No files uploaded. Send files under the 'files' field." });
@@ -245,7 +280,7 @@ router.post("/upload", upload.array("files", 20), async (req, res) => {
 
     for (const file of uploadedFiles) {
       try {
-        const result = await processUploadedFile(file);
+        const result = await processUploadedFile(file, requestedScope);
         results.push(result);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Processing failed";
@@ -509,10 +544,21 @@ router.patch("/:id", async (req, res) => {
       "policyDomain",
       "documentType",
       "audience",
+      "resourceScope",
       "status",
     ] as const;
 
     const updates: Partial<typeof documents.$inferInsert> = {};
+    if (
+      "resourceScope" in body &&
+      body.resourceScope !== null &&
+      (typeof body.resourceScope !== "string" || !isStoredResourceScope(body.resourceScope))
+    ) {
+      res.status(400).json({
+        error: "Invalid resourceScope. Use school, department, external, or unknown.",
+      });
+      return;
+    }
     for (const field of allowedFields) {
       if (field in body && (typeof body[field] === "string" || body[field] === null)) {
         (updates as Record<string, unknown>)[field] = body[field];

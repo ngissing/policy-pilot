@@ -93,6 +93,37 @@ export async function runMigrations(): Promise<void> {
     // ── pal_slugs: change-alert tracking columns ───────────────────────────
     await client.query(`ALTER TABLE pal_slugs ADD COLUMN IF NOT EXISTS change_detected_at timestamptz`);
     await client.query(`ALTER TABLE pal_slugs ADD COLUMN IF NOT EXISTS change_acknowledged_at timestamptz`);
+
+    // ── documents: explicit school/department resource scope ─────────────────
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS resource_scope text`);
+    await client.query(`CREATE INDEX IF NOT EXISTS documents_resource_scope_idx ON documents (resource_scope)`);
+    // Backfill records created before explicit scope existed. This preserves the
+    // established authority heuristic for Department Chat while keeping crawler
+    // imports out of the school corpus. New/failed AI classifications use the
+    // explicit "unknown" value and are not changed by this migration.
+    await client.query(`
+      UPDATE documents
+      SET resource_scope = CASE
+        WHEN pal_metadata IS NOT NULL
+          OR lower(coalesce(issuing_authority, '')) LIKE ANY (ARRAY[
+            '%department%', '%ministry%', '%government%', '%board of education%',
+            '%authority%', '%directorate%', '%commission%', '%nsw education%',
+            '%vic education%', '%qld education%', '%sa education%',
+            '%wa education%', '%tas education%', '%nt education%', '%act education%'
+          ])
+          OR lower(coalesce(source_url, '')) LIKE ANY (ARRAY[
+            '%education.vic.gov.au%', '%vic.gov.au%', '%education.nsw.gov.au%',
+            '%nsw.gov.au%', '%education.qld.gov.au%', '%qld.gov.au%',
+            '%education.wa.edu.au%', '%wa.gov.au%', '%education.sa.gov.au%',
+            '%sa.gov.au%', '%education.tas.gov.au%', '%tas.gov.au%',
+            '%education.nt.gov.au%', '%nt.gov.au%', '%education.act.gov.au%', '%act.gov.au%'
+          ])
+          THEN 'department'
+        WHEN coalesce(source_url, '') <> '' THEN 'external'
+        ELSE 'school'
+      END
+      WHERE resource_scope IS NULL
+    `);
   } finally {
     client.release();
   }

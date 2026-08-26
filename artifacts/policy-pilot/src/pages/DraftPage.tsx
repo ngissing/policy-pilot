@@ -120,7 +120,7 @@ export default function DraftPage() {
             if (event === "error") {
               throw new Error((payload.error as string) ?? "Generation failed");
             } else if (event === "meta") {
-              setDraftMeta(payload as DraftMeta);
+              setDraftMeta(payload as unknown as DraftMeta);
             } else if (event === "token") {
               setStreamingText((prev) => prev + ((payload.text as string) ?? ""));
             } else if (event === "done") {

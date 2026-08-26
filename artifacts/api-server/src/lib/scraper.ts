@@ -219,6 +219,7 @@ async function importTextDocument(
       audience: tags.audience,
       confidenceScore: tags.confidenceScore,
       sourceUrl,
+      resourceScope: "external",
       status,
     })
     .returning();

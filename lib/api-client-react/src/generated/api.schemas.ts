@@ -13,6 +13,20 @@ export interface Error {
   error: string;
 }
 
+/**
+ * @nullable
+ */
+export type DocumentResourceScope =
+  | (typeof DocumentResourceScope)[keyof typeof DocumentResourceScope]
+  | null;
+
+export const DocumentResourceScope = {
+  school: "school",
+  department: "department",
+  external: "external",
+  unknown: "unknown",
+} as const;
+
 export interface Document {
   id: number;
   filename: string;
@@ -31,14 +45,39 @@ export interface Document {
   confidenceScore?: number | null;
   /** @nullable */
   sourceUrl?: string | null;
+  /** @nullable */
+  resourceScope?: DocumentResourceScope;
   status: string;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface DocumentListResponse {
+  data: Document[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Applies to every uploaded file. Use ai to let PolicyPilot classify it.
+ */
+export type UploadDocumentBodyResourceScope =
+  (typeof UploadDocumentBodyResourceScope)[keyof typeof UploadDocumentBodyResourceScope];
+
+export const UploadDocumentBodyResourceScope = {
+  school: "school",
+  department: "department",
+  external: "external",
+  unknown: "unknown",
+  ai: "ai",
+} as const;
+
 export interface UploadDocumentBody {
   /** @maxItems 20 */
   files: Blob[];
+  /** Applies to every uploaded file. Use ai to let PolicyPilot classify it. */
+  resourceScope?: UploadDocumentBodyResourceScope;
 }
 
 export interface UploadResultItem {
@@ -58,12 +97,23 @@ export interface UploadDocumentResponse {
   errors: UploadErrorItem[];
 }
 
+export type UpdateDocumentBodyResourceScope =
+  (typeof UpdateDocumentBodyResourceScope)[keyof typeof UpdateDocumentBodyResourceScope];
+
+export const UpdateDocumentBodyResourceScope = {
+  school: "school",
+  department: "department",
+  external: "external",
+  unknown: "unknown",
+} as const;
+
 export interface UpdateDocumentBody {
   title?: string;
   issuingAuthority?: string;
   policyDomain?: string;
   documentType?: string;
   audience?: string;
+  resourceScope?: UpdateDocumentBodyResourceScope;
   status?: string;
 }
 
@@ -123,18 +173,28 @@ export interface DomainStat {
 }
 
 export type ListDocumentsParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   */
+  limit?: number;
   domain?: string;
   documentType?: string;
   audience?: string;
   status?: string;
+  resourceScope?: ListDocumentsResourceScope;
   search?: string;
-  page?: number;
-  limit?: number;
 };
 
-export interface DocumentListResponse {
-  data: Document[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+export type ListDocumentsResourceScope =
+  (typeof ListDocumentsResourceScope)[keyof typeof ListDocumentsResourceScope];
+
+export const ListDocumentsResourceScope = {
+  school: "school",
+  department: "department",
+  external: "external",
+  unknown: "unknown",
+} as const;

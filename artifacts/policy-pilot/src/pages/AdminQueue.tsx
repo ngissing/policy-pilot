@@ -21,6 +21,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -37,7 +38,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch } from "@/lib/api";
-import type { Document } from "@workspace/api-client-react";
+import type { Document, UpdateDocumentBody } from "@workspace/api-client-react";
 
 const DOMAINS = [
   "student-wellbeing", "curriculum", "staff-hr", "administration",
@@ -45,14 +46,17 @@ const DOMAINS = [
 ];
 const DOC_TYPES = ["policy", "procedure", "guideline", "framework", "strategy"];
 const AUDIENCES = ["staff", "students", "parents", "all"];
+const RESOURCE_SCOPES = [
+  { value: "school", label: "School-specific" },
+  { value: "department", label: "Department / government" },
+  { value: "external", label: "Other external resource" },
+  { value: "unknown", label: "Unknown" },
+];
 
-type FormState = {
-  title?: string;
-  issuingAuthority?: string;
-  policyDomain?: string;
-  documentType?: string;
-  audience?: string;
-};
+type FormState = Pick<
+  UpdateDocumentBody,
+  "title" | "issuingAuthority" | "policyDomain" | "documentType" | "audience" | "resourceScope"
+>;
 
 interface WikiPreview {
   summary: string | null;
@@ -106,6 +110,7 @@ export default function AdminQueue() {
       policyDomain: doc.policyDomain ?? "",
       documentType: doc.documentType ?? "",
       audience: doc.audience ?? "",
+      resourceScope: doc.resourceScope ?? "unknown",
     });
   };
 
@@ -189,6 +194,15 @@ export default function AdminQueue() {
                             {doc.issuingAuthority}
                           </Badge>
                         )}
+                        <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50 text-xs">
+                          {doc.resourceScope === "school"
+                            ? "School-specific"
+                            : doc.resourceScope === "department"
+                            ? "Department"
+                            : doc.resourceScope === "external"
+                            ? "External"
+                            : "Unknown source"}
+                        </Badge>
                       </div>
                     </div>
                   </div>
@@ -213,6 +227,9 @@ export default function AdminQueue() {
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Review Document</DialogTitle>
+              <DialogDescription>
+                Confirm the suggested metadata and choose the resource scope used by Chat filters.
+              </DialogDescription>
           </DialogHeader>
 
           {editing && (
@@ -280,6 +297,33 @@ export default function AdminQueue() {
                     }
                     placeholder="e.g. Department of Education, School Name"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Resource Scope</Label>
+                  <Select
+                    value={form.resourceScope ?? "unknown"}
+                    onValueChange={(v) =>
+                      setForm({
+                        ...form,
+                        resourceScope: v as UpdateDocumentBody["resourceScope"],
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select scope…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RESOURCE_SCOPES.map((scope) => (
+                        <SelectItem key={scope.value} value={scope.value}>
+                          {scope.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    This controls whether the document appears in School or Department Chat searches.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">

@@ -38,6 +38,16 @@ paths:
       tags: [documents]
       summary: List all documents
       parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
         - name: domain
           in: query
           schema:
@@ -54,6 +64,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: resourceScope
+          in: query
+          schema:
+            type: string
+            enum: [school, department, external, unknown]
         - name: search
           in: query
           schema:
@@ -64,9 +79,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Document"
+                $ref: "#/components/schemas/DocumentListResponse"
 
   /documents/upload:
     post:
@@ -382,6 +395,9 @@ components:
           type: ["number", "null"]
         sourceUrl:
           type: ["string", "null"]
+        resourceScope:
+          type: ["string", "null"]
+          enum: [school, department, external, unknown, null]
         status:
           type: string
         createdAt:
@@ -398,6 +414,21 @@ components:
         - createdAt
         - updatedAt
 
+    DocumentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required: [data, total, page, pageSize]
+
     UploadDocumentBody:
       type: object
       properties:
@@ -407,6 +438,10 @@ components:
             type: string
             format: binary
           maxItems: 20
+        resourceScope:
+          type: string
+          description: Applies to every uploaded file. Use ai to let PolicyPilot classify it.
+          enum: [school, department, external, unknown, ai]
       required:
         - files
 
@@ -466,6 +501,9 @@ components:
           type: string
         audience:
           type: string
+        resourceScope:
+          type: string
+          enum: [school, department, external, unknown]
         status:
           type: string
 
