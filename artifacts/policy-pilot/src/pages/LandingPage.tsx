@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { SignIn } from "@clerk/react";
 import {
   Shield,
   MessageSquare,
@@ -9,7 +7,6 @@ import {
   Zap,
   CheckCircle,
   ArrowRight,
-  X,
 } from "lucide-react";
 
 const FEATURES = [
@@ -70,7 +67,6 @@ const HOW_IT_WORKS = [
 ];
 
 export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
-  const [showSignIn, setShowSignIn] = useState(false);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -85,7 +81,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
             <span className="font-bold text-lg">PolicyPilot</span>
           </div>
           <button
-            onClick={() => setShowSignIn(true)}
+            onClick={onSignIn}
             className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold transition-colors"
           >
             Sign in
@@ -120,7 +116,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
-              onClick={() => setShowSignIn(true)}
+              onClick={onSignIn}
               className="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-base transition-all shadow-lg shadow-blue-900/40 hover:shadow-blue-600/30"
             >
               Get started free
@@ -236,7 +232,7 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
             Join schools across Australia using PolicyPilot to find, understand, and apply policies faster.
           </p>
           <button
-            onClick={() => setShowSignIn(true)}
+            onClick={onSignIn}
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-lg transition-all shadow-xl shadow-blue-900/40"
           >
             Get started for free
@@ -266,20 +262,6 @@ export default function LandingPage({ onSignIn }: { onSignIn: () => void }) {
         </div>
       </footer>
 
-      {/* Sign-in modal */}
-      {showSignIn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-md">
-            <button
-              onClick={() => setShowSignIn(false)}
-              className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <SignIn routing="hash" forceRedirectUrl="/" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

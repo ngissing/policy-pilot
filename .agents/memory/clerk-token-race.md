@@ -1,12 +1,10 @@
 ---
-name: Clerk token race condition fix
-description: Root cause and fix for intermittent 401s on API calls in the PolicyPilot frontend
+name: Clerk browser authentication
+description: Why the former explicit-token workaround must not be restored to the web client.
 ---
 
-**Rule:** Use `useLayoutEffect` (not `useEffect`) to register the Clerk token getter, and always call `getToken({ skipCache: true })`.
+Use the current Clerk skill's canonical cookie-based web authentication and production proxy wiring, not an explicit browser token getter.
 
-**Why:** React Query schedules its initial fetch as a microtask, which runs after `useLayoutEffect` but before `useEffect`. Without `useLayoutEffect`, the token getter is null on first load → 401. Without `skipCache: true`, Clerk reuses a cached JWT that may expire mid-session (60-second window) → intermittent 401s at ~60s intervals.
+**Why:** An earlier attempt treated preview 401s as a token-registration race and added a layout-effect/token-refresh workaround. That is superseded by the managed Clerk integration requirements. A working preview did not establish production readiness: missing production proxy wiring left the published app stuck waiting for authentication.
 
-**How to apply:** In `ClerkTokenSync` (App.tsx), both conditions must hold simultaneously. Changing either one alone does not fully fix the issue.
-
-**Backend side:** Custom `requireAuth` middleware in `middlewares/requireAuth.ts` uses `clerkGetAuth(req, { acceptsToken: "any" })` — returns 401 JSON, never redirects. The `{ acceptsToken: "any" }` option is required; omitting it silently rejects Bearer tokens.
+**How to apply:** Reload the Clerk setup and troubleshooting guidance before changing authentication. Investigate browser cookies and middleware for web 401s; reserve bearer-token handling for standalone/mobile clients. Validate preview and production separately, since only production uses the managed proxy.

@@ -1,5 +1,5 @@
 - [PAL crawl spec](pal-crawl-spec.md) — slug discovery uses /recently-updated + related-policies BFS (not A–Z API; endpoint unknown, §7 open item); print-all only canonical form
-- [Auth fix: Clerk token race](clerk-token-race.md) — useLayoutEffect + skipCache:true on getToken; avoids race with React Query microtask scheduling
+- [Clerk browser authentication](clerk-token-race.md) — use canonical cookie/proxy wiring; the earlier explicit-token race workaround is superseded
 - [Anthropic model names](anthropic-models.md) — Replit proxy uses new-style names (claude-haiku-4-5, claude-sonnet-4-6, claude-opus-5); old names like claude-3-5-haiku-20241022 return UNSUPPORTED_MODEL
 - [SSE error event swallow bug](sse-error-swallow.md) — throwing inside a try-catch meant for JSON.parse silently swallows the error; always break error-event handling out of the parse try-catch
 - [Scope-aware RAG retrieval](scope-aware-rag-retrieval.md) — apply Chat scope predicates in SQL before similarity ranking and candidate limits, never only after retrieval

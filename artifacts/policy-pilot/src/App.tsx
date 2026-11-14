@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, Component } from "react";
+import { useState, useEffect, Component, useRef } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 import { Switch, Route, Router as WouterRouter, Link, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,9 +9,13 @@ import {
   UserButton,
   useAuth,
   useUser,
+  useClerk,
+  SignIn,
+  SignUp,
 } from "@clerk/react";
-import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
-import { setApiTokenGetter, apiFetch } from "@/lib/api";
+import { publishableKeyFromHost } from "@clerk/react/internal";
+import { setBaseUrl } from "@workspace/api-client-react";
+import { apiFetch } from "@/lib/api";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import DocumentLibrary from "@/pages/DocumentLibrary";
@@ -100,7 +104,18 @@ const queryClient = new QueryClient({
   },
 });
 
-const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const clerkPubKey = publishableKeyFromHost(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function stripBase(path: string): string {
+  return basePath && path.startsWith(basePath)
+    ? path.slice(basePath.length) || "/"
+    : path;
+}
 
 setBaseUrl(import.meta.env.BASE_URL.replace(/\/$/, ""));
 
@@ -381,23 +396,24 @@ function AppShell() {
 
 // ─── Auth / Clerk wiring ───────────────────────────────────────────────────────
 
-function ClerkTokenSync() {
-  const { getToken, isSignedIn } = useAuth();
-  useLayoutEffect(() => {
-    if (!isSignedIn) {
-      setAuthTokenGetter(null);
-      setApiTokenGetter(null);
-      return;
-    }
-    const getter = () => getToken({ skipCache: true });
-    setAuthTokenGetter(getter);
-    setApiTokenGetter(getter);
-  }, [isSignedIn, getToken]);
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const prevUserIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    return addListener(({ user }) => {
+      const userId = user?.id ?? null;
+      if (prevUserIdRef.current !== undefined && prevUserIdRef.current !== userId) {
+        queryClient.clear();
+      }
+      prevUserIdRef.current = userId;
+    });
+  }, [addListener]);
   return null;
 }
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
+  const [, navigate] = useLocation();
 
   if (!isLoaded) {
     return (
@@ -408,28 +424,66 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!isSignedIn) {
-    return <LandingPage onSignIn={() => {}} />;
+    return <LandingPage onSignIn={() => navigate("/sign-in")} />;
   }
 
   return <>{children}</>;
 }
 
-function App() {
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
   return (
-    <ErrorBoundary>
-      <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+      <ClerkProvider
+        publishableKey={clerkPubKey}
+        proxyUrl={clerkProxyUrl}
+        signInUrl={`${basePath}/sign-in`}
+        signUpUrl={`${basePath}/sign-up`}
+        afterSignOutUrl={basePath || "/"}
+        routerPush={(to) => setLocation(stripBase(to))}
+        routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+        appearance={{
+          variables: { colorPrimary: "#2563eb", fontFamily: "Inter, sans-serif" },
+          options: {
+            logoImageUrl: `${window.location.origin}${basePath}/favicon.svg`,
+            logoLinkUrl: basePath || "/",
+          },
+        }}
+        localization={{
+          signIn: { start: { title: "Welcome to PolicyPilot", subtitle: "Sign in to your policy library" } },
+          signUp: { start: { title: "Join PolicyPilot", subtitle: "Create your school policy account" } },
+        }}
+      >
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <ClerkTokenSync />
-              <AuthGuard>
-                <AppShell />
-              </AuthGuard>
-            </WouterRouter>
+              <ClerkQueryClientCacheInvalidator />
+              <Switch>
+                <Route path="/sign-in/*?">
+                  <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+                    <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} forceRedirectUrl={`${basePath}/`} />
+                  </div>
+                </Route>
+                <Route path="/sign-up/*?">
+                  <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+                    <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} forceRedirectUrl={`${basePath}/`} />
+                  </div>
+                </Route>
+                <Route>
+                  <AuthGuard><AppShell /></AuthGuard>
+                </Route>
+              </Switch>
             <Toaster />
           </TooltipProvider>
         </QueryClientProvider>
       </ClerkProvider>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <WouterRouter base={basePath}>
+        <ClerkProviderWithRoutes />
+      </WouterRouter>
     </ErrorBoundary>
   );
 }
