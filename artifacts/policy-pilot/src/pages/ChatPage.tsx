@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/analytics";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -129,6 +130,7 @@ function AssistantBubble({
                 key={i}
                 className="border-slate-100 cursor-pointer hover:border-blue-200 hover:shadow-sm transition-all"
                 onClick={() => {
+                  trackEvent("chat_source_opened", { destination: c.sourceUrl ? "external" : "library" });
                   if (c.sourceUrl) {
                     window.open(c.sourceUrl, "_blank", "noopener,noreferrer");
                   } else {
@@ -250,6 +252,7 @@ export default function ChatPage() {
     setStreamingCitations([]);
 
     try {
+      trackEvent("chat_question_sent", { resource_scope: scopeFilter });
       const res = await apiFetchStream(`/chat/sessions/${sid}/messages/stream`, {
         method: "POST",
         body: JSON.stringify({ question: q, scopeFilter, domainFilter }),
@@ -286,6 +289,10 @@ export default function ChatPage() {
             if (event.type === "token" && event.text) {
               setStreamingText((prev) => prev + event.text);
             } else if (event.type === "done") {
+              trackEvent("chat_answer_received", {
+                resource_scope: scopeFilter,
+                citation_count: event.citations?.length ?? 0,
+              });
               // Switch from raw stream to the renumbered final answer
               setStreamingText(event.finalAnswer ?? "");
               setStreamingCitations(event.citations ?? []);

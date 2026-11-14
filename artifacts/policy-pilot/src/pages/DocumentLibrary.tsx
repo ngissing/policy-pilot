@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/analytics";
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearch } from "wouter";
@@ -256,7 +257,10 @@ export default function DocumentLibrary() {
             </Select>
             <Select
               value={resourceScope}
-              onValueChange={(value) => setResourceScope(value as ResourceScopeFilter)}
+              onValueChange={(value) => {
+                setResourceScope(value as ResourceScopeFilter);
+                trackEvent("library_scope_selected", { resource_scope: value });
+              }}
             >
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Source" />

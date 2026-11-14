@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/analytics";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiUpload } from "@/lib/api";
@@ -174,6 +175,7 @@ export default function UploadPage() {
     const pending = files.filter((f) => f.status === "pending");
     if (pending.length === 0 || isUploading) return;
 
+    trackEvent("upload_started", { file_count: pending.length, resource_scope: resourceScope });
     setIsUploading(true);
     setFiles((prev) =>
       prev.map((f) => (f.status === "pending" ? { ...f, status: "uploading" } : f))
@@ -189,6 +191,11 @@ export default function UploadPage() {
       const batch = await apiUpload<BatchUploadResponse>("/documents/upload", formData);
       const results: UploadResult[] = batch.results ?? [];
       const errors: Array<{ filename: string; error: string }> = batch.errors ?? [];
+      trackEvent("upload_completed", {
+        accepted_count: results.length,
+        failed_count: errors.length,
+        resource_scope: resourceScope,
+      });
 
       const resultByFilename = new Map(results.map((r) => [r.filename, r]));
       const errorByFilename = new Map(errors.map((e) => [e.filename, e.error]));
@@ -212,6 +219,7 @@ export default function UploadPage() {
         description: "AI tagging and indexing in progress…",
       });
     } catch (err: unknown) {
+      trackEvent("upload_failed", { file_count: pending.length, resource_scope: resourceScope });
       const message = err instanceof Error ? err.message : "Upload failed";
       setFiles((prev) =>
         prev.map((f) =>

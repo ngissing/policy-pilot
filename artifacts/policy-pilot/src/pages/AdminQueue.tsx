@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/analytics";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -82,6 +83,7 @@ export default function AdminQueue() {
         qc.invalidateQueries({ queryKey: getListDocumentsQueryKey() });
         setEditing(null);
         const action = vars.data.status === "rejected" ? "rejected" : "approved";
+        trackEvent("document_review_completed", { decision: action });
         toast({ title: `Document ${action}` });
       },
       onError: (e) =>

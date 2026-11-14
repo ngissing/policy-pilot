@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/analytics";
 import { useState, useEffect, useRef } from "react";
 import { apiFetch, apiFetchStream } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -77,6 +78,7 @@ export default function DraftPage() {
   async function handleGenerate() {
     if (!topic.trim() || isGenerating) return;
 
+    trackEvent("draft_generation_started", { school_context: useSchoolContext });
     setIsGenerating(true);
     setStreamingText("");
     setFinalDraft("");
@@ -124,6 +126,7 @@ export default function DraftPage() {
             } else if (event === "token") {
               setStreamingText((prev) => prev + ((payload.text as string) ?? ""));
             } else if (event === "done") {
+              trackEvent("draft_generation_completed", { school_context: useSchoolContext });
               setFinalDraft((payload.text as string) ?? "");
               setStreamingText("");
             }
@@ -133,6 +136,7 @@ export default function DraftPage() {
       }
     } catch (err: unknown) {
       if ((err as Error).name === "AbortError") return;
+      trackEvent("draft_generation_failed", { school_context: useSchoolContext });
       const msg = (err as Error).message ?? "Failed to generate draft";
       toast({ title: "Draft generation failed", description: msg, variant: "destructive" });
     } finally {
@@ -175,6 +179,7 @@ export default function DraftPage() {
         }
       );
       setSavedDocId(res.id);
+      trackEvent("draft_saved_to_library");
       toast({
         title: "Saved to library",
         description: `"${res.filename}" has been added to the Review Queue for approval.`,
