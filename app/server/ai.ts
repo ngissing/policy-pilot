@@ -14,13 +14,14 @@ const isModel = (m: unknown): m is ModelId => typeof m === "string" && m in MODE
 
 /** Model for answering questions. */
 export function answerModel(): ModelId {
-  const m = getSetting("model_answers") ?? process.env.POLICYPILOT_MODEL;
+  // `||` so a blank line in .env falls through to the next option.
+  const m = getSetting("model_answers") || process.env.POLICYPILOT_MODEL;
   return isModel(m) ? m : DEFAULT_MODEL;
 }
 
 /** Model for reading documents: tags, categories and plain-English briefings. */
 export function processingModel(): ModelId {
-  const m = getSetting("model_processing") ?? process.env.POLICYPILOT_PROCESSING_MODEL ?? process.env.POLICYPILOT_MODEL;
+  const m = getSetting("model_processing") || process.env.POLICYPILOT_PROCESSING_MODEL || process.env.POLICYPILOT_MODEL;
   return isModel(m) ? m : DEFAULT_MODEL;
 }
 
