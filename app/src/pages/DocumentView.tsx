@@ -164,6 +164,12 @@ export default function DocumentView() {
             <section>
               <h2 style={{ marginBottom: 8 }}>Full text</h2>
               <Markdown text={doc.body.replace(/<!-- page (\d+) -->/g, "\n\n*Page $1*\n\n")} className="fulltext" />
+              {!isSchool && (
+                <p className="small muted" style={{ marginTop: 20 }}>
+                  Source: Policy and Advisory Library, Department of Education, Victoria. © State of Victoria.{" "}
+                  {doc.url && <a href={doc.url} target="_blank" rel="noreferrer">Read the original</a>}
+                </p>
+              )}
             </section>
           )}
         </div>

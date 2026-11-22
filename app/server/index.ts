@@ -7,6 +7,7 @@ import { api } from "./api.ts";
 import { loadIndex, embed } from "./embed.ts";
 import { resumeQueue } from "./ingest.ts";
 import { scheduleWeeklySync } from "./pal.ts";
+import { scheduleDailyBackups } from "./backup.ts";
 
 const app = express();
 app.disable("x-powered-by");
@@ -20,6 +21,16 @@ const dist = path.resolve("dist");
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, { index: false, maxAge: "1h" }));
   app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
+} else {
+  // In development the app is served by Vite on port 5173; point people there if they open this port.
+  app.get("/", (_req, res) =>
+    res
+      .type("html")
+      .send(
+        `<p style="font:16px system-ui;margin:40px">This is PolicyPilot's API server. Open the app on port <strong>5173</strong> instead` +
+          ` (in GitHub Codespaces: the Ports tab, then the globe icon on the 5173 row).</p>`
+      )
+  );
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -35,6 +46,7 @@ app.listen(port, () => {
   console.log(`Loaded ${loadIndex()} passages into the search index.`);
   resumeQueue();
   scheduleWeeklySync();
+  scheduleDailyBackups();
   // Warm the embedding model so the first question isn't slow.
   embed(["warm up"]).then(() => console.log("Embedding model ready.")).catch((e) => console.error("Embedding model failed to load:", e));
 });

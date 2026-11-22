@@ -4,11 +4,14 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import os from "node:os";
+import { snapshot } from "./backup.ts";
 import { all, one, run, tx, setSetting, getSetting, UPLOAD_DIR } from "./db.ts";
 import {
-  hashPassword, verifyPassword, newJoinCode, startSession, endSession,
-  requireUser, requireAdmin, requireOwner,
+  hashPassword, verifyPassword, newJoinCode, startSession, endSession, sessionToken, temporaryPassword,
+  requireUser, requireAdmin, requireOwner, ownerEmail, schoolSignup, emailAllowed,
 } from "./auth.ts";
+import { limit, take, tooMany } from "./limits.ts";
 import { aiReady, claude, structured, friendlyAiError, MODELS, answerModel, processingModel, isModel, estimateCost } from "./ai.ts";
 import { enqueue, deleteDocument, retagPending, CATEGORIES, DOC_TYPES, AUDIENCES } from "./ingest.ts";
 import { kindFromName, SUPPORTED } from "./text.ts";
@@ -35,9 +38,21 @@ const str = (v: unknown, max = 500) => (typeof v === "string" ? v.trim().slice(0
 
 // ─── Session & sign-up ───────────────────────────────────────────────────────
 
+const HOUR = 3_600_000;
+
+api.get("/health", (_req, res) => {
+  one("SELECT 1");
+  res.json({ ok: true });
+});
+
 api.get("/me", (req, res) => {
   const hasAccounts = !!one("SELECT 1 FROM users LIMIT 1");
-  if (!req.user) return res.json({ user: null, hasAccounts });
+  const signup = {
+    schools: schoolSignup(),
+    // True while the owner still needs to create their account.
+    ownerSetup: !hasAccounts || (!!ownerEmail() && !one("SELECT 1 FROM users WHERE is_owner = 1")),
+  };
+  if (!req.user) return res.json({ user: null, hasAccounts, signup });
   const school = one<any>("SELECT id, name, school_type, suburb, region, website, about FROM schools WHERE id = ?", req.user.school_id);
   const counts = one<any>(
     `SELECT (SELECT COUNT(*) FROM documents WHERE school_id = ? AND status = 'ready') AS school_docs,
@@ -47,38 +62,66 @@ api.get("/me", (req, res) => {
                AND EXISTS (SELECT 1 FROM doc_links l JOIN documents d ON d.id = l.document_id WHERE l.pal_slug = c.slug AND d.school_id = ?)) AS alerts`,
     req.user.school_id, req.user.school_id, req.user.school_id
   );
-  res.json({ user: req.user, school, counts, aiReady: aiReady(), hasAccounts, answerLength: userLength(req.user.id) });
+  res.json({ user: req.user, school, counts, aiReady: aiReady(), hasAccounts, signup, answerLength: userLength(req.user.id) });
 });
 
 function validateAccount(body: any): string | null {
   if (!str(body.name)) return "Enter your name.";
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(str(body.email))) return "Enter a valid email address.";
   if (typeof body.password !== "string" || body.password.length < 10) return "Use a password of at least 10 characters.";
+  if (!emailAllowed(str(body.email))) return "Use your school or Department email address to sign up.";
   if (one("SELECT 1 FROM users WHERE email = ?", str(body.email))) return "There's already an account with that email. Sign in instead.";
   return null;
 }
 
-api.post("/auth/signup-school", h((req, res) => {
+function validInvite(token: unknown) {
+  return one<{ token: string; note: string | null }>(
+    "SELECT token, note FROM school_invites WHERE token = ? AND used_at IS NULL AND expires_at > ?",
+    str(token, 100),
+    Date.now()
+  );
+}
+
+api.get("/auth/invite/:token", (req, res) => {
+  const invite = validInvite(req.params.token);
+  res.json(invite ? { valid: true, note: invite.note } : { valid: false });
+});
+
+api.post("/auth/signup-school", limit("signup", 10, HOUR), h((req, res) => {
   const b = req.body ?? {};
   const err = validateAccount(b);
   if (err) return bad(res, err);
   if (!str(b.schoolName)) return bad(res, "Enter your school's name.");
+
+  const email = str(b.email, 200).toLowerCase();
+  const owner = ownerEmail();
+  const isOwnerEmail = !!owner && email === owner;
   const isFirst = !one("SELECT 1 FROM users LIMIT 1");
+  let invite: { token: string } | undefined;
+  if (isFirst && owner && !isOwnerEmail) {
+    return bad(res, "This PolicyPilot is waiting for its owner to finish setting it up.", 403);
+  }
+  if (!isFirst && !isOwnerEmail && schoolSignup() === "invite") {
+    invite = validInvite(b.invite);
+    if (!invite) return bad(res, "Setting up a new school needs an invitation link from whoever runs this PolicyPilot.", 403);
+  }
+
   const userId = tx(() => {
     const schoolId = Number(run(
       "INSERT INTO schools(name, school_type, suburb, join_code) VALUES (?, ?, ?, ?)",
       str(b.schoolName, 200), str(b.schoolType, 60) || null, str(b.suburb, 100) || null, newJoinCode()
     ).lastInsertRowid);
+    if (invite) run("UPDATE school_invites SET used_at = datetime('now'), school_id = ? WHERE token = ?", schoolId, invite.token);
     return Number(run(
       "INSERT INTO users(school_id, email, name, password_hash, role, is_owner) VALUES (?, ?, ?, ?, 'admin', ?)",
-      schoolId, str(b.email, 200), str(b.name, 120), hashPassword(b.password), isFirst ? 1 : 0
+      schoolId, str(b.email, 200), str(b.name, 120), hashPassword(b.password), isOwnerEmail || (isFirst && !owner) ? 1 : 0
     ).lastInsertRowid);
   });
   startSession(res, userId);
   res.json({ ok: true });
 }));
 
-api.post("/auth/join", h((req, res) => {
+api.post("/auth/join", limit("signup", 10, HOUR), h((req, res) => {
   const b = req.body ?? {};
   const school = one<{ id: number }>("SELECT id FROM schools WHERE join_code = ?", str(b.code, 20).toUpperCase());
   if (!school) return bad(res, "That join code didn't match a school. Check it with your school's admin.");
@@ -92,8 +135,12 @@ api.post("/auth/join", h((req, res) => {
   res.json({ ok: true });
 }));
 
-api.post("/auth/login", h((req, res) => {
-  const u = one<any>("SELECT id, password_hash FROM users WHERE email = ?", str(req.body?.email, 200));
+api.post("/auth/login", limit("login-ip", 40, 15 * 60_000), h((req, res) => {
+  const email = str(req.body?.email, 200).toLowerCase();
+  // Slow down guessing against one account, wherever the attempts come from.
+  const wait = take(`login-email:${email}`, 10, 15 * 60_000);
+  if (wait) return tooMany(res, wait);
+  const u = one<any>("SELECT id, password_hash FROM users WHERE email = ?", email);
   if (!u || !verifyPassword(String(req.body?.password ?? ""), u.password_hash)) {
     return bad(res, "That email and password don't match an account.", 401);
   }
@@ -108,6 +155,29 @@ api.post("/auth/logout", (req, res) => {
 
 // Everything below needs a signed-in user.
 api.use(requireUser);
+
+// ─── Your account ────────────────────────────────────────────────────────────
+
+api.post("/me/password", limit("password", 10, HOUR, true), (req, res) => {
+  const next = req.body?.next;
+  if (typeof next !== "string" || next.length < 10) return bad(res, "Use a password of at least 10 characters.");
+  const u = one<any>("SELECT password_hash, must_change_password FROM users WHERE id = ?", req.user!.id);
+  // After a reset the temporary password was just used to sign in, so it isn't asked for again.
+  if (!u.must_change_password && !verifyPassword(String(req.body?.current ?? ""), u.password_hash)) {
+    return bad(res, "Your current password isn't right.");
+  }
+  if (verifyPassword(next, u.password_hash)) return bad(res, "Choose a password you haven't just used.");
+  run("UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?", hashPassword(next), req.user!.id);
+  // Sign out other browsers.
+  run("DELETE FROM sessions WHERE user_id = ? AND token != ?", req.user!.id, sessionToken(req) ?? "");
+  res.json({ ok: true });
+});
+
+// Someone using a temporary password must choose their own before doing anything else.
+api.use((req, res, next) => {
+  if (req.user!.must_change_password) return bad(res, "Choose a new password to continue.", 403);
+  next();
+});
 
 // ─── School profile & staff ──────────────────────────────────────────────────
 
@@ -454,7 +524,8 @@ api.delete("/conversations/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-api.post("/conversations/:id/ask", h(async (req, res) => {
+// Each answer is a paid AI call, so one person can ask at most 120 questions an hour.
+api.post("/conversations/:id/ask", limit("ask", 120, HOUR, true), h(async (req, res) => {
   const question = str(req.body?.question, 4000);
   if (!question) return bad(res, "Type a question first.");
   await answer(res, req.user!, int(req.params.id), question);
@@ -532,7 +603,7 @@ api.put("/platform/models", requireOwner, (req, res) => {
 });
 
 /** Answer one question with several models from the same sources, so the owner can judge quality and cost. */
-api.post("/platform/compare", requireOwner, h(async (req, res) => {
+api.post("/platform/compare", requireOwner, limit("compare", 20, HOUR, true), h(async (req, res) => {
   const question = str(req.body?.question, 2000);
   const models: string[] = Array.isArray(req.body?.models) ? req.body.models.filter(isModel).slice(0, 3) : [];
   if (!question) return bad(res, "Type a question to compare.");
@@ -569,3 +640,55 @@ api.post("/platform/compare", requireOwner, h(async (req, res) => {
   );
   res.json({ sources: toSourceOut(passages), results, length });
 }));
+
+// ─── Staff passwords ─────────────────────────────────────────────────────────
+
+/** An admin sets a one-time password for a staff member, who must choose their own at next sign-in. */
+api.post("/school/staff/:id/reset-password", requireAdmin, limit("reset", 30, HOUR, true), (req, res) => {
+  const target = one<any>("SELECT id, is_owner FROM users WHERE id = ? AND school_id = ?", int(req.params.id), req.user!.school_id);
+  if (!target) return bad(res, "Staff member not found.", 404);
+  if (target.id === req.user!.id) return bad(res, "Change your own password under Your account.");
+  if (target.is_owner && !req.user!.is_owner) return bad(res, "Only the platform owner can reset this account.", 403);
+  const password = temporaryPassword();
+  run("UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?", hashPassword(password), target.id);
+  run("DELETE FROM sessions WHERE user_id = ?", target.id);
+  res.json({ password });
+});
+
+// ─── School invitations (owner only) ─────────────────────────────────────────
+
+const INVITE_DAYS = 14;
+
+api.get("/platform/invites", requireOwner, (_req, res) => {
+  res.json({
+    invites: all(
+      `SELECT i.token, i.note, i.created_at, i.expires_at, i.used_at, s.name AS school
+       FROM school_invites i LEFT JOIN schools s ON s.id = i.school_id
+       WHERE i.used_at IS NOT NULL OR i.expires_at > ? ORDER BY i.created_at DESC LIMIT 50`,
+      Date.now()
+    ),
+    schools: all("SELECT s.name, s.created_at, COUNT(u.id) AS staff FROM schools s LEFT JOIN users u ON u.school_id = s.id GROUP BY s.id ORDER BY s.name"),
+  });
+});
+
+api.post("/platform/invites", requireOwner, (req, res) => {
+  const token = crypto.randomBytes(18).toString("base64url");
+  run(
+    "INSERT INTO school_invites(token, note, created_by, expires_at) VALUES (?, ?, ?, ?)",
+    token, str(req.body?.note, 120) || null, req.user!.id, Date.now() + INVITE_DAYS * 86_400_000
+  );
+  res.json({ token, days: INVITE_DAYS });
+});
+
+api.delete("/platform/invites/:token", requireOwner, (req, res) => {
+  run("DELETE FROM school_invites WHERE token = ? AND used_at IS NULL", String(req.params.token));
+  res.json({ ok: true });
+});
+
+// ─── Backup download (owner only) ────────────────────────────────────────────
+
+api.get("/platform/backup", requireOwner, (_req, res) => {
+  const file = path.join(os.tmpdir(), `policypilot-${crypto.randomUUID()}.db`);
+  snapshot(file);
+  res.download(file, `policypilot-backup-${new Date().toISOString().slice(0, 10)}.db`, () => fs.rm(file, { force: true }, () => {}));
+});

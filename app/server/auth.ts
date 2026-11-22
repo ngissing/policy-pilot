@@ -12,6 +12,7 @@ export interface User {
   name: string;
   role: "admin" | "staff";
   is_owner: number;
+  must_change_password: number;
 }
 
 declare global {
@@ -34,6 +35,37 @@ export function verifyPassword(password: string, stored: string): boolean {
   const expected = Buffer.from(hashB64, "base64");
   const actual = crypto.scryptSync(password, Buffer.from(saltB64, "base64"), expected.length);
   return crypto.timingSafeEqual(expected, actual);
+}
+
+/** Random password a staff member must change at their next sign-in, e.g. "fern-7Q4K-tide". */
+export function temporaryPassword(): string {
+  const words = ["fern", "tide", "maple", "river", "quartz", "ember", "cedar", "harbour", "wattle", "basalt", "kestrel", "marlin"];
+  const pick = () => words[crypto.randomInt(words.length)];
+  return `${pick()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}-${pick()}`;
+}
+
+/** The platform owner is set by OWNER_EMAIL when present; otherwise the first account becomes owner. */
+export function ownerEmail(): string | null {
+  return process.env.OWNER_EMAIL?.trim().toLowerCase() || null;
+}
+
+/** New schools: "invite" (default, needs a link from the owner) or "open" (anyone can set one up). */
+export function schoolSignup(): "open" | "invite" {
+  return process.env.SCHOOL_SIGNUP === "open" ? "open" : "invite";
+}
+
+/** Optional ALLOWED_EMAIL_DOMAINS, e.g. "education.vic.gov.au,schools.vic.edu.au". The owner is always allowed. */
+export function emailAllowed(email: string): boolean {
+  const domains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "").split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+  if (!domains.length || email.toLowerCase() === ownerEmail()) return true;
+  const host = email.toLowerCase().split("@")[1] ?? "";
+  return domains.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/** Keep the owner flag in step with OWNER_EMAIL. */
+export function applyOwnerEmail() {
+  const owner = ownerEmail();
+  if (owner) run("UPDATE users SET is_owner = CASE WHEN lower(email) = ? THEN 1 ELSE 0 END", owner);
 }
 
 export function newJoinCode(): string {
@@ -59,10 +91,15 @@ export function startSession(res: Response, userId: number) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Secure whenever the request came over HTTPS (behind Railway's proxy too, as "trust proxy" is on).
+    secure: res.req.secure,
     maxAge: SESSION_DAYS * 86_400_000,
     path: "/",
   });
+}
+
+export function sessionToken(req: Request): string | undefined {
+  return parseCookies(req.headers.cookie)[COOKIE];
 }
 
 export function endSession(req: Request, res: Response) {
@@ -75,7 +112,7 @@ export function loadUser(req: Request, _res: Response, next: NextFunction) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) {
     const user = one<User>(
-      `SELECT u.id, u.school_id, u.email, u.name, u.role, u.is_owner
+      `SELECT u.id, u.school_id, u.email, u.name, u.role, u.is_owner, u.must_change_password
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = ? AND s.expires_at > ?`,
       token,
@@ -105,3 +142,4 @@ export function requireOwner(req: Request, res: Response, next: NextFunction) {
 }
 
 run("DELETE FROM sessions WHERE expires_at < ?", Date.now());
+applyOwnerEmail();

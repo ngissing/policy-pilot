@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api";
 import { useMe } from "../App";
@@ -8,18 +8,32 @@ type Mode = "signin" | "school" | "join";
 
 export default function Login() {
   const { me, refresh } = useMe();
-  const [mode, setMode] = useState<Mode>(me.hasAccounts ? "signin" : "school");
+  // An invitation link from the owner looks like https://…/?invite=TOKEN
+  const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
+  const [invite, setInvite] = useState<{ valid: boolean; note?: string | null } | null>(null);
+  const [mode, setMode] = useState<Mode>(inviteToken || !me.hasAccounts ? "school" : "signin");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (!inviteToken) return;
+    api(`/auth/invite/${encodeURIComponent(inviteToken)}`).then((d) => {
+      setInvite(d);
+      if (!d.valid) setMode("signin");
+    });
+  }, [inviteToken]);
+
+  const canCreateSchool = !!invite?.valid || me.signup?.schools === "open" || !!me.signup?.ownerSetup;
+
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const body = Object.fromEntries(new FormData(e.currentTarget));
+    const body = { ...Object.fromEntries(new FormData(e.currentTarget)), invite: inviteToken ?? undefined };
     setBusy(true);
     setError(null);
     try {
       const path = mode === "signin" ? "/auth/login" : mode === "school" ? "/auth/signup-school" : "/auth/join";
       await api(path, { body });
+      if (inviteToken) window.history.replaceState(null, "", "/");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -41,7 +55,9 @@ export default function Login() {
             school's own policies, then answers with the exact sources.
           </p>
         </div>
-        <p className="small" style={{ color: "#8f9aa8" }}>For Victorian government schools.</p>
+        <p className="small" style={{ color: "#8f9aa8" }}>
+          For Victorian government schools. PAL content © State of Victoria (Department of Education), linked to its source.
+        </p>
         <div className="auth-tabs" aria-hidden>
           <span style={{ background: "var(--dept)" }}>Department (PAL)</span>
           <span style={{ background: "var(--school)" }}>Our school</span>
@@ -57,7 +73,12 @@ export default function Login() {
             </h2>
             <p className="muted" style={{ marginTop: 6 }}>
               {mode === "signin" && "Use the email you registered with."}
-              {mode === "school" && (me.hasAccounts ? "Create a space for your school. You'll be its admin." : "You're the first person here, so you'll also manage the shared PAL library.")}
+              {mode === "school" &&
+                (invite?.valid
+                  ? `You've been invited to set up ${invite.note ? invite.note : "your school"} on PolicyPilot. You'll be its admin.`
+                  : me.hasAccounts
+                    ? "Create a space for your school. You'll be its admin."
+                    : "You're the first person here, so you'll also manage the shared PAL library.")}
               {mode === "join" && "Ask your school's PolicyPilot admin for the join code."}
             </p>
           </div>
@@ -94,6 +115,9 @@ export default function Login() {
             {mode !== "signin" && <span className="hint">At least 10 characters.</span>}
           </div>
 
+          {invite && !invite.valid && (
+            <div className="notice error" role="alert">That invitation link has expired or has already been used. Ask for a new one.</div>
+          )}
           {error && <div className="notice error" role="alert">{error}</div>}
 
           <button className="btn primary" type="submit" disabled={busy} style={{ height: 42 }}>
@@ -108,8 +132,11 @@ export default function Login() {
             {mode !== "join" && me.hasAccounts && (
               <p>Got a join code from your school? <a href="#" onClick={(e) => { e.preventDefault(); setMode("join"); }}>Join your school</a></p>
             )}
-            {mode !== "school" && (
+            {mode !== "school" && canCreateSchool && (
               <p>New school? <a href="#" onClick={(e) => { e.preventDefault(); setMode("school"); }}>Set up your school</a></p>
+            )}
+            {mode !== "school" && !canCreateSchool && (
+              <p className="muted">New school? Ask whoever runs this PolicyPilot for an invitation link.</p>
             )}
           </div>
         </form>

@@ -224,6 +224,17 @@ function addColumn(table: string, column: string, definition: string) {
   }
 }
 addColumn("users", "answer_length", "TEXT NOT NULL DEFAULT 'normal'");
+addColumn("users", "must_change_password", "INTEGER NOT NULL DEFAULT 0");
+db.exec(`
+CREATE TABLE IF NOT EXISTS school_invites (
+  token TEXT PRIMARY KEY,
+  note TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at INTEGER NOT NULL,
+  used_at TEXT,
+  school_id INTEGER REFERENCES schools(id) ON DELETE SET NULL
+);`);
 // PAL attachments (guides, fact sheets) are documents that belong to a PAL topic.
 addColumn("documents", "parent_id", "INTEGER REFERENCES documents(id) ON DELETE CASCADE");
 db.exec("CREATE INDEX IF NOT EXISTS documents_parent ON documents(parent_id)");
