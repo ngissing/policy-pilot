@@ -239,7 +239,7 @@ function Platform() {
       <div className="stack" style={{ gap: 10, borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
         <h3 className="row"><Landmark size={16} /> PAL library</h3>
         <p className="small">
-          {p.pal.topics ? `${p.pal.topics} topics loaded` : "Not loaded yet"}
+          {p.pal.topics ? `${p.pal.topics} topics${p.pal.guides ? ` and ${p.pal.guides} guides` : ""} loaded` : "Not loaded yet"}
           {p.pal.lastSync && `, last checked ${fmtDate(p.pal.lastSync)}`}. PolicyPilot checks PAL for changes every week and only re-reads topics that changed.
         </p>
         {p.pal.running && job ? (

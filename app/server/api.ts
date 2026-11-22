@@ -41,7 +41,7 @@ api.get("/me", (req, res) => {
   const school = one<any>("SELECT id, name, school_type, suburb, region, website, about FROM schools WHERE id = ?", req.user.school_id);
   const counts = one<any>(
     `SELECT (SELECT COUNT(*) FROM documents WHERE school_id = ? AND status = 'ready') AS school_docs,
-            (SELECT COUNT(*) FROM documents WHERE school_id IS NULL AND status = 'ready') AS pal_docs,
+            (SELECT COUNT(*) FROM documents WHERE school_id IS NULL AND parent_id IS NULL AND status = 'ready') AS pal_docs,
             (SELECT COUNT(*) FROM pal_changes c WHERE c.changed_on >= date('now','-60 days')
                AND NOT EXISTS (SELECT 1 FROM change_acks a WHERE a.change_id = c.id AND a.school_id = ?)
                AND EXISTS (SELECT 1 FROM doc_links l JOIN documents d ON d.id = l.document_id WHERE l.pal_slug = c.slug AND d.school_id = ?)) AS alerts`,
@@ -159,7 +159,7 @@ api.get("/documents", (req, res) => {
   const q = str(req.query.q, 200);
   const where = [source === "pal" ? "d.school_id IS NULL" : "d.school_id = ?"];
   const params: any[] = source === "pal" ? [] : [req.user!.school_id];
-  if (source === "pal") where.push("d.status = 'ready'");
+  if (source === "pal") where.push("d.status = 'ready'", "d.parent_id IS NULL");
   if (q) {
     where.push("(d.title LIKE ? OR d.summary LIKE ? OR d.pal_slug LIKE ?)");
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
@@ -202,7 +202,12 @@ api.get("/documents/:id", (req, res) => {
     );
     changes = all("SELECT changed_on, description FROM pal_changes WHERE slug = ? ORDER BY changed_on DESC LIMIT 8", doc.pal_slug);
   }
-  res.json({ document: doc, related, usedBy, changes });
+  // PAL topics list their attached guides; a guide points back to its topic.
+  const guides = doc.school_id === null && !doc.parent_id
+    ? all("SELECT id, title, url, word_count FROM documents WHERE parent_id = ? AND status = 'ready' ORDER BY title", doc.id)
+    : [];
+  const parent = doc.parent_id ? one("SELECT id, title, url, reviewed_date FROM documents WHERE id = ?", doc.parent_id) : null;
+  res.json({ document: doc, related, usedBy, changes, guides, parent });
 });
 
 api.get("/documents/:id/file", (req, res) => {
@@ -464,6 +469,7 @@ api.get("/platform", requireOwner, (_req, res) => {
     models: { answers: answerModel(), processing: processingModel(), options: Object.entries(MODELS).map(([id, m]) => ({ id, ...m })) },
     pal: {
       topics: one<any>("SELECT COUNT(*) AS n FROM pal_topics WHERE retired_at IS NULL AND document_id IS NOT NULL")?.n ?? 0,
+      guides: one<any>("SELECT COUNT(*) AS n FROM documents WHERE parent_id IS NOT NULL AND status = 'ready'")?.n ?? 0,
       lastSync: getSetting("pal_last_sync"),
       running: palSyncRunning(),
     },

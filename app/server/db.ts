@@ -224,6 +224,9 @@ function addColumn(table: string, column: string, definition: string) {
   }
 }
 addColumn("users", "answer_length", "TEXT NOT NULL DEFAULT 'normal'");
+// PAL attachments (guides, fact sheets) are documents that belong to a PAL topic.
+addColumn("documents", "parent_id", "INTEGER REFERENCES documents(id) ON DELETE CASCADE");
+db.exec("CREATE INDEX IF NOT EXISTS documents_parent ON documents(parent_id)");
 
 // Jobs left "running" by a previous process are dead.
 run("UPDATE jobs SET status = 'failed', message = 'Interrupted by a restart', finished_at = datetime('now') WHERE status = 'running'");

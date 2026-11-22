@@ -128,7 +128,8 @@ export function linkToPal(docId: number) {
   tx(() => {
     run("DELETE FROM doc_links WHERE document_id = ?", docId);
     for (const [palDocId, score] of top) {
-      const slug = one<{ pal_slug: string }>("SELECT pal_slug FROM documents WHERE id = ?", palDocId)?.pal_slug;
+      // A match on an attached guide counts for the PAL topic it belongs to.
+      const slug = one<{ slug: string }>("SELECT COALESCE(d.pal_slug, p.pal_slug) AS slug FROM documents d LEFT JOIN documents p ON p.id = d.parent_id WHERE d.id = ?", palDocId)?.slug;
       if (slug) run("INSERT OR REPLACE INTO doc_links(document_id, pal_slug, score) VALUES (?, ?, ?)", docId, slug, score);
     }
   });

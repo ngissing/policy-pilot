@@ -62,16 +62,29 @@ export default function DocumentView() {
 
   return (
     <div className="page">
-      <Link to={isSchool ? "/library" : "/library?tab=pal"} className="btn ghost sm" style={{ marginBottom: 12, marginLeft: -10 }}>
-        <ArrowLeft size={14} /> Library
-      </Link>
+      {data.parent ? (
+        <Link to={`/documents/${data.parent.id}`} className="btn ghost sm" style={{ marginBottom: 12, marginLeft: -10 }}>
+          <ArrowLeft size={14} /> {data.parent.title}
+        </Link>
+      ) : (
+        <Link to={isSchool ? "/library" : "/library?tab=pal"} className="btn ghost sm" style={{ marginBottom: 12, marginLeft: -10 }}>
+          <ArrowLeft size={14} /> Library
+        </Link>
+      )}
       <div className="doc-head">
-        <div className="row"><SourceTab school={isSchool} />{doc.category && <span className="muted small">{doc.category}</span>}</div>
+        <div className="row">
+          <SourceTab school={isSchool} />
+          {data.parent ? <span className="muted small">Guide attached to the PAL topic {data.parent.title}</span> : doc.category && <span className="muted small">{doc.category}</span>}
+        </div>
         <h1>{doc.title || doc.filename}</h1>
         {doc.summary && <p style={{ color: "var(--ink-2)", fontSize: 16.5, maxWidth: "70ch" }}>{doc.summary}</p>}
         <div className="row" style={{ marginTop: 6 }}>
           <button className="btn primary" onClick={askAbout} disabled={doc.status !== "ready"}><MessageSquareText size={16} /> Ask about this</button>
-          {!isSchool && doc.url && <a className="btn" href={doc.url} target="_blank" rel="noreferrer"><ExternalLink size={16} /> View on PAL</a>}
+          {!isSchool && doc.url && (
+            <a className="btn" href={doc.url} target="_blank" rel="noreferrer">
+              <ExternalLink size={16} /> {data.parent ? "Original file" : "View on PAL"}
+            </a>
+          )}
           {isSchool && doc.filename && doc.mime !== ".html" && <a className="btn" href={`/api/documents/${doc.id}/file`}><Download size={16} /> Original file</a>}
           {isSchool && doc.url && <a className="btn" href={doc.url} target="_blank" rel="noreferrer"><ExternalLink size={16} /> On your website</a>}
           {isSchool && isAdmin && (
@@ -114,6 +127,12 @@ export default function DocumentView() {
                 {doc.next_review && doc.next_review.slice(0, 10) < today && " (overdue)"}
               </dd>
             </div>
+          </>
+        ) : data.parent ? (
+          <>
+            <div><dt>Part of</dt><dd><Link to={`/documents/${data.parent.id}`}>{data.parent.title}</Link></dd></div>
+            <div><dt>Topic last updated</dt><dd>{data.parent.reviewed_date ? fmtDate(data.parent.reviewed_date) : "Not stated"}</dd></div>
+            <div><dt>Length</dt><dd>{doc.word_count ? `${Math.max(1, Math.round(doc.word_count / 230))} min read` : "—"}</dd></div>
           </>
         ) : (
           <>
@@ -165,7 +184,21 @@ export default function DocumentView() {
               </div>
             </section>
           )}
-          {!isSchool && (
+          {data.guides?.length > 0 && (
+            <section className="card card-pad">
+              <h3 style={{ marginBottom: 4 }}>Guides and fact sheets</h3>
+              <p className="small muted" style={{ marginBottom: 8 }}>Published with this topic. Answers can quote them too.</p>
+              <div className="side-list">
+                {data.guides.map((g: any) => (
+                  <Link key={g.id} to={`/documents/${g.id}`}>
+                    <div style={{ fontWeight: 600 }}>{g.title}</div>
+                    <div className="small muted">{/\.docx$/i.test(g.url) ? "Word" : "PDF"}, {Math.max(1, Math.round(g.word_count / 230))} min read</div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+          {!isSchool && !data.parent && (
             <>
               <section className="card card-pad">
                 <h3 style={{ marginBottom: 8 }}>Your documents that relate to this</h3>

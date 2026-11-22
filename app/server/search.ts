@@ -82,11 +82,18 @@ export async function retrieve(
 
   const ids = ranked.slice(0, 80).map(([id]) => id);
   const rows = all<any>(
-    `SELECT c.id, c.document_id, c.idx, c.section, c.text, d.title, d.source, d.school_id, d.url, d.reviewed_date
-     FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id IN (${ids.map(() => "?").join(",")})`,
+    `SELECT c.id, c.document_id, c.idx, c.section, c.text, d.title, d.source, d.school_id, d.url, d.reviewed_date,
+            d.parent_id, p.title AS parent_title
+     FROM chunks c JOIN documents d ON d.id = c.document_id LEFT JOIN documents p ON p.id = d.parent_id
+     WHERE c.id IN (${ids.map(() => "?").join(",")})`,
     ...ids
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
+  // Attached guides support the policy text rather than replace it, so they rank a little lower.
+  ranked.splice(0, ranked.length, ...ranked
+    .filter(([id]) => byId.has(id))
+    .map(([id, s]) => [id, byId.get(id).parent_id ? s * 0.8 : s] as [number, number])
+    .sort((a, b) => b[1] - a[1]));
 
   // Pick the best passages, at most 3 per document, and keep room for the school's own documents.
   const picked: any[] = [];
@@ -148,11 +155,13 @@ export async function retrieve(
       "SELECT text FROM chunks WHERE document_id = ? AND idx BETWEEN ? AND ? ORDER BY idx",
       w.docId, w.lo, w.hi
     );
+    const sections = w.sections.join("; ");
     return {
       chunkId: p.id,
       documentId: p.document_id,
-      title: p.title,
-      section: w.sections.join("; "),
+      // An attached guide is cited under its PAL topic: "Excursions › Excursion planning guide › Page 3".
+      title: p.parent_title ?? p.title,
+      section: p.parent_title ? [p.title, sections].filter(Boolean).join(" › ") : sections,
       text: around.length ? mergeOverlapping(around.map((a) => a.text)) : p.text,
       source: p.source,
       isSchool: p.school_id !== null,

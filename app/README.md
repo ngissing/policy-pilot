@@ -60,6 +60,12 @@ and only the "Policy last updated" date from the page body is shown (the "Date: 
 date). The sync stops if the sitemap suddenly lists far more or fewer pages than expected. The Department's
 Elasticsearch category endpoint isn't used; categories come from the AI (or a local estimate when there's no key).
 
+**Attached guides.** PAL topics link to PDFs and Word files. Most sit on the Department's SharePoint and need a staff
+login, so they're skipped. Of the public ones, guides, fact sheets, FAQs and procedures are read and stored under their
+topic; blank forms, templates, registers and samples are skipped (`isGuide` in `server/pal.ts`). In November 2026 that
+was 32 guides from 289 public links. Guide passages rank slightly below the policy text and are cited as
+"Topic › Guide title".
+
 ### Costs
 
 Each answer is one Claude call with about 8 passages of context. Each uploaded document is one call for tagging and

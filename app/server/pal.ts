@@ -12,7 +12,7 @@
  */
 import * as cheerio from "cheerio";
 import { all, one, run } from "./db.ts";
-import { htmlToMarkdown, chunkMarkdown, wordCount } from "./text.ts";
+import { htmlToMarkdown, chunkMarkdown, wordCount, extract } from "./text.ts";
 import { writeChunks, sha, CATEGORIES, linkToPal } from "./ingest.ts";
 import { embed } from "./embed.ts";
 import { aiReady, structured } from "./ai.ts";
@@ -77,6 +77,35 @@ export interface PalMeta {
   chapters: string[];
   contacts: string[];
   url: string;
+  /** Publicly downloadable files linked from the topic (staff-login SharePoint links are left out). */
+  attachments?: Array<{ url: string; title: string }>;
+}
+
+// Hosts that need a Department login, so their files can't be fetched.
+const LOGIN_HOSTS = /(^|\.)(sharepoint\.com|edugate\.eduweb\.vic\.gov\.au|arc\.educationapps\.vic\.gov\.au)$/i;
+
+function cleanLinkText(s: string) {
+  return s
+    .replace(/\((pdf|docx?|xlsx?|pptx?)[^)]*\)/gi, "")
+    .replace(/\((staff login required|opens in a new (window|tab))\)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseAttachments($: cheerio.CheerioAPI): PalMeta["attachments"] {
+  const seen = new Map<string, { url: string; title: string }>();
+  $("a[href]").each((_, a) => {
+    const raw = $(a).attr("href") ?? "";
+    const text = $(a).text().replace(/\s+/g, " ").trim();
+    if (/staff login required/i.test(text)) return;
+    let u: URL;
+    try { u = new URL(raw, BASE); } catch { return; }
+    if (!/\.(pdf|docx)$/i.test(u.pathname)) return;
+    if (!u.hostname.endsWith(".vic.gov.au") || LOGIN_HOSTS.test(u.hostname)) return;
+    const title = cleanLinkText(text) || decodeURIComponent(u.pathname.split("/").pop() ?? "").replace(/\.(pdf|docx)$/i, "");
+    if (!seen.has(u.href) && title.length > 2) seen.set(u.href, { url: u.href, title });
+  });
+  return [...seen.values()];
 }
 
 function parseTopicPage(html: string, slug: string, url: string): { title: string; body: string; meta: PalMeta } {
@@ -126,7 +155,7 @@ function parseTopicPage(html: string, slug: string, url: string): { title: strin
   return {
     title,
     body: parts.join("\n\n").trim(),
-    meta: { scope, policyUpdated, related: dedupe(related), chapters, contacts, url },
+    meta: { scope, policyUpdated, related: dedupe(related), chapters, contacts, url, attachments: parseAttachments($) },
   };
 }
 
@@ -151,7 +180,8 @@ async function fetchTopic(t: Topic): Promise<{ title: string; body: string; meta
     if (!r.ok) continue;
     const p = parseTopicPage(await r.text(), t.slug, `${BASE}/pal/${t.slug}`);
     title ||= p.title;
-    meta ??= p.meta;
+    if (!meta) meta = p.meta;
+    else meta.attachments = [...new Map([...(meta.attachments ?? []), ...(p.meta.attachments ?? [])].map((a) => [a.url, a])).values()];
     const tab = url.split(`/pal/${t.slug}`)[1]?.split("/").filter(Boolean).pop() ?? "Overview";
     if (wordCount(p.body) > 20) bodies.push(`# ${tab.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase())}\n\n${p.body}`);
   }
@@ -248,7 +278,7 @@ async function categorise(title: string, body: string): Promise<{ category: stri
 /** Once an AI key is added, replace locally estimated categories with AI ones (and add summaries). */
 export async function recategorisePal() {
   if (!aiReady()) return;
-  const rows = all<{ id: number; title: string; body: string }>("SELECT id, title, body FROM documents WHERE source = 'pal' AND needs_ai = 1 AND status = 'ready'");
+  const rows = all<{ id: number; title: string; body: string }>("SELECT id, title, body FROM documents WHERE source = 'pal' AND parent_id IS NULL AND needs_ai = 1 AND status = 'ready'");
   for (const r of rows) {
     const c = await categorise(r.title, r.body ?? "");
     if (c.estimated) break; // AI unavailable — stop and try again later
@@ -324,13 +354,19 @@ async function palSync(jobId: number, opts: { full?: boolean; limit?: number }) 
       retired++;
       run("UPDATE pal_topics SET retired_at = datetime('now') WHERE slug = ?", slug);
       if (k.document_id) {
-        await writeChunks(k.document_id, null, slug, []);
-        run("UPDATE documents SET status = 'error', error = 'This topic has been retired from PAL.', updated_at = datetime('now') WHERE id = ?", k.document_id);
+        // The topic and its attached guides stop appearing in answers.
+        const ids = [k.document_id, ...all<{ id: number }>("SELECT id FROM documents WHERE parent_id = ?", k.document_id).map((r) => r.id)];
+        for (const id of ids) {
+          await writeChunks(id, null, slug, []);
+          run("UPDATE documents SET status = 'error', error = 'This topic has been retired from PAL.', updated_at = datetime('now') WHERE id = ?", id);
+        }
       }
       const title = one<{ title: string }>("SELECT title FROM pal_topics WHERE slug = ?", slug)?.title ?? slug;
       run("INSERT OR IGNORE INTO pal_changes(slug, title, kind, description, changed_on) VALUES (?, ?, 'retired', 'This topic is no longer listed on PAL.', date('now'))", slug, title);
     }
   }
+
+  const files = await syncAttachments(jobId);
 
   if (aiReady()) {
     job(jobId, { message: "Sorting topics into PAL categories…" });
@@ -341,14 +377,109 @@ async function palSync(jobId: number, opts: { full?: boolean; limit?: number }) 
     for (const { id } of all<{ id: number }>("SELECT id FROM documents WHERE school_id IS NOT NULL AND status = 'ready'")) linkToPal(id);
   }
 
-  const summary = { added, updated, unchanged, failed, retired };
+  const summary = { added, updated, unchanged, failed, retired, files };
   run("INSERT INTO settings(key, value) VALUES ('pal_last_sync', datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   job(jobId, {
     done,
     status: "done",
     result: JSON.stringify(summary),
-    message: `Finished: ${added} new, ${updated} updated, ${unchanged} unchanged${failed ? `, ${failed} couldn't be read` : ""}${retired ? `, ${retired} retired` : ""}.`,
+    message:
+      `Finished: ${added} new, ${updated} updated, ${unchanged} unchanged${failed ? `, ${failed} couldn't be read` : ""}${retired ? `, ${retired} retired` : ""}.` +
+      (files.added || files.removed ? ` Guides: ${files.added} added${files.removed ? `, ${files.removed} removed` : ""}.` : ""),
   });
+}
+
+// ─── Attached guides ─────────────────────────────────────────────────────────
+
+/**
+ * Which linked files are worth reading. Guides, fact sheets and procedures help answers;
+ * blank forms, templates and registers mostly add noise.
+ */
+const GUIDE = /\b(guid(e|es|ance|elines)|fact ?sheets?|procedures?|advice|overview|information|faqs?|frequently asked|handbook|framework|toolkit|manual|explainer|q ?& ?a|principles|standards|strateg(y|ies)|protocols?|policy|summary|resource|requirements|roles and responsibilities)\b/i;
+const STRONG_GUIDE = /\b(guid(e|es|ance|elines)|fact ?sheets?|faqs?|frequently asked|handbook|manual|toolkit|explainer)\b/i;
+const NOT_GUIDE = /\b(form|forms|template|templates|checklist|register|log|application|order|declaration|consent|agreement|letter|poster|certificate|record sheet|spreadsheet|calculator|invoice|claim|sample|proforma|pro forma|timetable|list)\b/i;
+
+export function isGuide(title: string, url: string): boolean {
+  const text = `${title} ${decodeURIComponent(url.split("/").pop() ?? "").replace(/[_-]+/g, " ")}`;
+  if (STRONG_GUIDE.test(text)) return true;
+  if (NOT_GUIDE.test(text)) return false;
+  if (GUIDE.test(text)) return true;
+  // Unlabelled PDFs are usually publications; unlabelled Word files are usually templates.
+  return /\.pdf$/i.test(url);
+}
+
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Make sure each PAL topic's public guides are in the library. Topics read before attachments were
+ * tracked get their page fetched again once; after that the list comes with each topic sync.
+ */
+export async function syncAttachments(jobId: number): Promise<{ added: number; removed: number; skipped: number; loginOnly: number }> {
+  const topics = all<{ id: number; title: string; pal_slug: string; category: string | null; meta: string }>(
+    "SELECT id, title, pal_slug, category, meta FROM documents WHERE source = 'pal' AND parent_id IS NULL AND status = 'ready'"
+  );
+  let added = 0, removed = 0, skipped = 0, loginOnly = 0, checked = 0;
+  job(jobId, { done: 0, total: topics.length, message: "Checking PAL topics for guides…" });
+
+  for (const t of topics) {
+    checked++;
+    const meta = JSON.parse(t.meta) as PalMeta;
+    if (!meta.attachments) {
+      job(jobId, { done: checked, message: `Looking for guides in ${t.title}` });
+      try {
+        const res = await politeFetch(`${BASE}/pal/${t.pal_slug}/print-all`);
+        if (!res.ok) continue;
+        const html = await res.text();
+        meta.attachments = parseAttachments(cheerio.load(html)) ?? [];
+        loginOnly += (html.match(/staff login required/gi) ?? []).length;
+        run("UPDATE documents SET meta = ? WHERE id = ?", JSON.stringify(meta), t.id);
+      } catch {
+        continue;
+      }
+    }
+
+    const wanted = (meta.attachments ?? []).filter((a) => isGuide(a.title, a.url));
+    skipped += (meta.attachments?.length ?? 0) - wanted.length;
+    const have = new Map(all<{ id: number; url: string }>("SELECT id, url FROM documents WHERE parent_id = ?", t.id).map((r) => [r.url, r.id]));
+
+    // Guides the topic no longer links to.
+    for (const [url, id] of have) {
+      if (!wanted.some((a) => a.url === url)) {
+        await writeChunks(id, null, "", []);
+        run("DELETE FROM documents WHERE id = ?", id);
+        removed++;
+      }
+    }
+
+    for (const a of wanted) {
+      if (have.has(a.url)) continue;
+      // The same file is often linked from several topics; keep it once.
+      if (one("SELECT 1 FROM documents WHERE url = ? AND parent_id IS NOT NULL", a.url)) continue;
+      job(jobId, { done: checked, message: `Reading "${a.title}"` });
+      try {
+        const res = await politeFetch(a.url);
+        if (!res.ok) continue;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > MAX_FILE_BYTES) continue;
+        const kind = /\.docx$/i.test(a.url) ? ".docx" : ".pdf";
+        const body = await extract(buf, kind);
+        if (wordCount(body) < 120) continue; // blank forms and scans
+        // The same guide is sometimes published at two addresses.
+        if (one("SELECT 1 FROM documents WHERE parent_id IS NOT NULL AND content_hash = ?", sha(body))) continue;
+        const id = Number(run(
+          `INSERT INTO documents(school_id, source, parent_id, title, url, mime, category, status, body, word_count, content_hash)
+           VALUES (NULL, 'pal', ?, ?, ?, ?, ?, 'processing', ?, ?, ?)`,
+          t.id, a.title.slice(0, 250), a.url, kind, t.category, body, wordCount(body), sha(body)
+        ).lastInsertRowid);
+        await writeChunks(id, null, `${a.title} (${t.title})`, chunkMarkdown(body));
+        run("UPDATE documents SET status = 'ready' WHERE id = ?", id);
+        added++;
+      } catch {
+        // Unreadable file: leave it out.
+      }
+    }
+  }
+  return { added, removed, skipped, loginOnly };
 }
 
 async function saveTopic(t: Topic, got: { title: string; body: string; meta: PalMeta }, firstRun: boolean): Promise<"added" | "updated" | "unchanged"> {

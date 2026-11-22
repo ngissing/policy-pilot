@@ -24,7 +24,8 @@ export function kindFromName(name: string, mime?: string): string | null {
 export async function extract(buf: Buffer, kind: string): Promise<string> {
   switch (kind) {
     case ".pdf": {
-      const pdf = await getDocumentProxy(new Uint8Array(buf));
+      // verbosity 0: only real errors, not the font warnings many school PDFs trigger.
+      const pdf = await getDocumentProxy(new Uint8Array(buf), { verbosity: 0 });
       const { text } = await extractText(pdf, { mergePages: false });
       return (text as string[])
         .map((t, i) => `<!-- page ${i + 1} -->\n${tidyPdfPage(t)}`)
