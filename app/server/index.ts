@@ -20,6 +20,16 @@ const dist = path.resolve("dist");
 if (fs.existsSync(dist)) {
   app.use(express.static(dist, { index: false, maxAge: "1h" }));
   app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(path.join(dist, "index.html")));
+} else {
+  // In development the app is served by Vite on port 5173; point people there if they open this port.
+  app.get("/", (_req, res) =>
+    res
+      .type("html")
+      .send(
+        `<p style="font:16px system-ui;margin:40px">This is PolicyPilot's API server. Open the app on port <strong>5173</strong> instead` +
+          ` (in GitHub Codespaces: the Ports tab, then the globe icon on the 5173 row).</p>`
+      )
+  );
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
