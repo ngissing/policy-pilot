@@ -7,6 +7,7 @@ import { api } from "./api.ts";
 import { loadIndex, embed } from "./embed.ts";
 import { resumeQueue } from "./ingest.ts";
 import { scheduleWeeklySync } from "./pal.ts";
+import { scheduleDailyBackups } from "./backup.ts";
 
 const app = express();
 app.disable("x-powered-by");
@@ -45,6 +46,7 @@ app.listen(port, () => {
   console.log(`Loaded ${loadIndex()} passages into the search index.`);
   resumeQueue();
   scheduleWeeklySync();
+  scheduleDailyBackups();
   // Warm the embedding model so the first question isn't slow.
   embed(["warm up"]).then(() => console.log("Embedding model ready.")).catch((e) => console.error("Embedding model failed to load:", e));
 });

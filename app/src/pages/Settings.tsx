@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Cpu, KeyRound, Landmark, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Cpu, Download, KeyRound, Landmark, RefreshCw, Trash2 } from "lucide-react";
 import { api, fmtDate } from "../api";
 import type { Source } from "../api";
 import { useMe } from "../App";
@@ -23,6 +23,7 @@ export default function Settings() {
       </div>
       <div className="stack" style={{ gap: 24 }}>
         <AnswerPreferences />
+        <YourAccount />
         <SchoolProfile />
         <Staff />
         {!!me.user!.is_owner && <Platform />}
@@ -103,10 +104,53 @@ function SchoolProfile() {
   );
 }
 
+function YourAccount() {
+  const { me } = useMe();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const f = new FormData(form);
+    if (f.get("next") !== f.get("again")) return setError("The two new passwords don't match.");
+    setError(null);
+    try {
+      await api("/me/password", { body: { current: f.get("current"), next: f.get("next") } });
+      form.reset();
+      setOpen(false);
+      toast("Password changed. Other browsers have been signed out.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  return (
+    <section className="card card-pad">
+      <div className="row">
+        <div style={{ flex: 1 }}>
+          <h2 style={{ marginBottom: 2 }}>Your account</h2>
+          <p className="muted small">{me.user!.name}, {me.user!.email}</p>
+        </div>
+        {!open && <button className="btn" onClick={() => setOpen(true)}><KeyRound size={15} /> Change password</button>}
+      </div>
+      {open && (
+        <form className="form-grid" style={{ marginTop: 16 }} onSubmit={save}>
+          <div className="field wide"><label htmlFor="cur">Current password</label><input id="cur" className="input" name="current" type="password" required autoComplete="current-password" /></div>
+          <div className="field"><label htmlFor="nw">New password</label><input id="nw" className="input" name="next" type="password" required minLength={10} autoComplete="new-password" /><span className="hint">At least 10 characters.</span></div>
+          <div className="field"><label htmlFor="nw2">Type it again</label><input id="nw2" className="input" name="again" type="password" required minLength={10} autoComplete="new-password" /></div>
+          {error && <div className="notice error wide" role="alert">{error}</div>}
+          <div className="row wide"><button className="btn primary" type="submit">Save password</button><button className="btn ghost" type="button" onClick={() => { setOpen(false); setError(null); }}>Cancel</button></div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function Staff() {
   const { me } = useMe();
   const toast = useToast();
   const [data, setData] = useState<any>(null);
+  const [reset, setReset] = useState<{ name: string; email: string; password: string } | null>(null);
   const isAdmin = me.user!.role === "admin";
   const load = useCallback(() => api("/school").then(setData), []);
   useEffect(() => { load(); }, [load]);
@@ -129,6 +173,15 @@ function Staff() {
     if (!confirm(`Remove ${s.name}'s access?`)) return;
     await api(`/school/staff/${s.id}`, { method: "DELETE" });
     load();
+  };
+  const resetPassword = async (s: any) => {
+    if (!confirm(`Give ${s.name} a one-time password? Their current password stops working and they're signed out.`)) return;
+    try {
+      const { password } = await api(`/school/staff/${s.id}/reset-password`, { method: "POST" });
+      setReset({ name: s.name, email: s.email, password });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (
@@ -155,6 +208,9 @@ function Staff() {
                   <option value="staff">Staff</option>
                   <option value="admin">School admin</option>
                 </select>
+                <button className="btn ghost sm" onClick={() => resetPassword(s)} title={`Give ${s.name} a one-time password`}>
+                  <KeyRound size={14} /> Reset password
+                </button>
                 <button className="btn ghost icon" onClick={() => remove(s)} aria-label={`Remove ${s.name}`}><Trash2 size={16} /></button>
               </>
             ) : (
@@ -163,6 +219,21 @@ function Staff() {
           </div>
         ))}
       </div>
+      {reset && (
+        <div className="notice" role="status" style={{ marginTop: 12 }}>
+          <div className="stack" style={{ gap: 8 }}>
+            <p>
+              One-time password for <strong>{reset.name}</strong> ({reset.email}). Give it to them in person or by phone. They'll
+              choose their own when they sign in. It won't be shown again.
+            </p>
+            <div className="row">
+              <code style={{ fontSize: 17, fontWeight: 700, background: "var(--surface)", padding: "3px 10px", borderRadius: 6 }}>{reset.password}</code>
+              <button className="btn sm" onClick={async () => { await navigator.clipboard.writeText(reset.password); toast("Copied."); }}><Copy size={14} /> Copy</button>
+              <button className="btn ghost sm" onClick={() => setReset(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
       <p className="small muted" style={{ marginTop: 10 }}>School admins can add and remove documents. Staff can ask questions and read the library.</p>
     </section>
   );
@@ -261,7 +332,82 @@ function Platform() {
       </div>
 
       <Models p={p} onSaved={load} />
+      <Invites />
+      <Backup />
     </section>
+  );
+}
+
+/** New schools join by invitation: the owner makes a single-use link and sends it to the school's leader. */
+function Invites() {
+  const { me } = useMe();
+  const toast = useToast();
+  const [data, setData] = useState<{ invites: any[]; schools: any[] } | null>(null);
+  const [note, setNote] = useState("");
+  const load = useCallback(() => api("/platform/invites").then(setData), []);
+  useEffect(() => { load(); }, [load]);
+  const link = (token: string) => `${window.location.origin}/?invite=${token}`;
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { token } = await api("/platform/invites", { body: { note } });
+    await navigator.clipboard.writeText(link(token)).catch(() => {});
+    setNote("");
+    toast("Invitation link made and copied.");
+    load();
+  };
+  const cancel = async (token: string) => {
+    await api(`/platform/invites/${token}`, { method: "DELETE" });
+    load();
+  };
+  if (!data) return null;
+  const open = data.invites.filter((i) => !i.used_at);
+  return (
+    <div className="stack" style={{ gap: 10, borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
+      <h3 className="row"><Landmark size={16} /> Schools</h3>
+      <p className="small">
+        {data.schools.length} school{data.schools.length === 1 ? "" : "s"} on this PolicyPilot.{" "}
+        {me.signup?.schools === "open"
+          ? "Anyone can set up a new school (SCHOOL_SIGNUP=open)."
+          : "New schools need an invitation link. Each link works once and lasts 14 days."}
+      </p>
+      <form className="row" onSubmit={create}>
+        <input className="input" style={{ maxWidth: 360 }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Which school is it for? (optional)" aria-label="Which school the invitation is for" />
+        <button className="btn primary" type="submit">Make invitation link</button>
+      </form>
+      {open.length > 0 && (
+        <div className="stack" style={{ gap: 6 }}>
+          {open.map((i) => (
+            <div key={i.token} className="file-item">
+              <span className="name">{i.note || "Invitation"} <span className="muted small">expires {fmtDate(new Date(i.expires_at).toISOString())}</span></span>
+              <button className="btn sm" onClick={async () => { await navigator.clipboard.writeText(link(i.token)); toast("Link copied."); }}><Copy size={14} /> Copy link</button>
+              <button className="btn ghost sm" onClick={() => cancel(i.token)}>Cancel</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {data.schools.length > 1 && (
+        <details>
+          <summary className="small" style={{ cursor: "pointer" }}>All schools</summary>
+          <div className="stack small" style={{ gap: 4, marginTop: 8 }}>
+            {data.schools.map((s: any) => <span key={s.name + s.created_at}>{s.name} <span className="muted">({s.staff} staff, since {fmtDate(s.created_at)})</span></span>)}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function Backup() {
+  return (
+    <div className="stack" style={{ gap: 8, borderTop: "1px solid var(--rule)", paddingTop: 16 }}>
+      <h3 className="row"><Download size={16} /> Backups</h3>
+      <p className="small">
+        PolicyPilot keeps a copy of its database from each of the last 7 days next to the live one. That covers mistakes,
+        not losing the server, so download a copy now and then and keep it somewhere safe. It holds every school's
+        documents and accounts.
+      </p>
+      <div><a className="btn" href="/api/platform/backup"><Download size={15} /> Download a backup</a></div>
+    </div>
   );
 }
 

@@ -13,12 +13,15 @@ import Updates from "./pages/Updates";
 import Settings from "./pages/Settings";
 
 export interface Me {
-  user: { id: number; name: string; email: string; role: "admin" | "staff"; is_owner: number; school_id: number } | null;
+  user: {
+    id: number; name: string; email: string; role: "admin" | "staff"; is_owner: number; school_id: number; must_change_password: number;
+  } | null;
   school?: { id: number; name: string; school_type: string | null; suburb: string | null; website: string | null };
   counts?: { school_docs: number; pal_docs: number; alerts: number };
   aiReady?: boolean;
   answerLength?: "short" | "normal" | "extended";
   hasAccounts: boolean;
+  signup?: { schools: "open" | "invite"; ownerSetup: boolean };
 }
 
 const MeCtx = createContext<{ me: Me; refresh: () => Promise<void> }>(null!);
@@ -46,7 +49,7 @@ export default function App() {
     <MeCtx.Provider value={{ me, refresh }}>
       <ToastProvider>
         <BrowserRouter>
-          {me.user ? <Shell /> : (
+          {me.user?.must_change_password ? <NewPassword /> : me.user ? <Shell /> : (
             <Routes>
               <Route path="*" element={<Login />} />
             </Routes>
@@ -54,6 +57,50 @@ export default function App() {
         </BrowserRouter>
       </ToastProvider>
     </MeCtx.Provider>
+  );
+}
+
+/** Shown after an admin has reset someone's password: they choose their own before going on. */
+function NewPassword() {
+  const { me, refresh } = useMe();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    if (f.get("next") !== f.get("again")) return setError("The two passwords don't match.");
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/me/password", { body: { next: f.get("next") } });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="auth-form" style={{ minHeight: "100%" }}>
+      <form onSubmit={submit}>
+        <div>
+          <h2 style={{ fontSize: 24 }}>Choose a new password</h2>
+          <p className="muted" style={{ marginTop: 6 }}>
+            Hi {me.user!.name.split(" ")[0]}. You signed in with a one-time password, so pick your own to continue.
+          </p>
+        </div>
+        <div className="field">
+          <label htmlFor="np">New password</label>
+          <input className="input" id="np" name="next" type="password" required minLength={10} autoComplete="new-password" autoFocus />
+          <span className="hint">At least 10 characters.</span>
+        </div>
+        <div className="field">
+          <label htmlFor="np2">Type it again</label>
+          <input className="input" id="np2" name="again" type="password" required minLength={10} autoComplete="new-password" />
+        </div>
+        {error && <div className="notice error" role="alert">{error}</div>}
+        <button className="btn primary" type="submit" disabled={busy} style={{ height: 42 }}>{busy && <Spinner />} Save password</button>
+      </form>
+    </div>
   );
 }
 

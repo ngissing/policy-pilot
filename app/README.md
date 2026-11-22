@@ -22,7 +22,7 @@ around them.
 
 ## Running it
 
-Needs Node.js 22.18 or later (it runs TypeScript directly, no build step for the server).
+Needs Node.js 24 (it runs TypeScript directly, no build step for the server).
 
 ```powershell
 cd app
@@ -39,6 +39,37 @@ Open http://localhost:5173. The first account you create sets up a school and be
 
 For production: `npm run build` then `npm start` (serves the app and API on `PORT`, default 3011). Run one server
 process per data folder: background jobs (PAL sync, document processing) live in that process.
+
+## Accounts and access
+
+- **Platform owner:** the account whose email matches `OWNER_EMAIL`, or the first account if that's blank. Manages the
+  AI key, models, the PAL library, school invitations and backups (Settings → Platform).
+- **New schools** need a single-use invitation link from the owner (valid 14 days), unless `SCHOOL_SIGNUP=open`.
+  `ALLOWED_EMAIL_DOMAINS` can restrict every sign-up to certain email domains.
+- **Staff** join their school with its join code. School admins can make other staff admins, remove them, or give them
+  a one-time password, which they must change at their next sign-in.
+- **Locked out?** On the server run `npm run reset-password -- someone@example.com` for a one-time password.
+- **Limits:** 10 failed sign-ins per account (and 40 per address) every 15 minutes, 10 sign-ups per address an hour,
+  and 120 questions per person an hour.
+
+## Deploying to Railway
+
+1. **New project → Deploy from GitHub repo**, pick this repository and the branch with `app/`.
+2. In the service's **Settings**:
+   - **Root Directory:** `app`. Railway runs `npm run build` and `npm start` from `package.json` (Node 24).
+   - **Healthcheck Path:** `/api/health`.
+   - **Replicas:** 1. Background jobs and the database live in the one process.
+3. **Add a Volume** mounted at `/data` (5 GB is plenty). Without it, every deploy starts from an empty database.
+4. **Variables:** `POLICYPILOT_DATA_DIR=/data`, `OWNER_EMAIL=you@example.com`, `ANTHROPIC_API_KEY=…`
+   (optionally `ALLOWED_EMAIL_DOMAINS`). Railway sets `PORT` itself.
+5. **Networking → Custom Domain:** enter your domain and add the DNS record Railway shows at your domain registrar.
+   HTTPS is set up automatically once the record resolves.
+6. After the first deploy, sign up with the `OWNER_EMAIL` address straight away, then in Settings choose the models,
+   load the PAL library (about 15 minutes) and make invitation links for schools.
+
+Allow about 1–1.5 GB of memory: the search model runs inside the app, and loading PAL is CPU-heavy for a while.
+A copy of the database is kept for each of the last 7 days in `/data/backups`; download one now and then from
+Settings → Platform → Backups and store it elsewhere.
 
 ## How it works
 
