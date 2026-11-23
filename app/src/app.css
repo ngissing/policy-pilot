@@ -553,3 +553,5 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 .answer.compact { font-size: 15px; line-height: 1.55; }
 
 .length-select { height: 32px; width: auto; padding: 0 8px; font-size: 13.5px; border-radius: 999px; background: var(--sunken); border-color: transparent; font-weight: 600; color: var(--ink-2); }
+
+.nowrap { white-space: nowrap; }

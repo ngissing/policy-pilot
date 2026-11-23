@@ -150,9 +150,6 @@ export default function Login() {
                 {mode === "signin" ? "Sign in" : mode === "school" ? "Create school" : "Join school"}
               </button>
 
-              {mode === "signin" && (
-                <p className="small muted">Forgot your password? Your school's PolicyPilot admin can give you a one-time password.</p>
-              )}
               {mode === "school" && me.hasAccounts && (
                 <p className="small">Already have an account? <a href="#" onClick={(e) => { e.preventDefault(); switchTo("signin"); }}>Sign in</a></p>
               )}
@@ -175,24 +172,25 @@ export default function Login() {
 }
 
 /**
- * A real example of what an answer looks like, quoted from the PAL "Allergies" topic. The cited sentence is
- * highlighted once when the page loads.
+ * A real example of what an answer looks like, quoted from the PAL "Suspensions" topic (Policy › Summary,
+ * policy last updated 1 July 2025). The cited sentence is highlighted once when the page loads.
  */
 function AnswerPreview() {
   return (
     <figure className="preview" aria-label="Example of a PolicyPilot answer">
-      <div className="preview-q">Do we need a plan for a student who has a Green Plan?</div>
+      <div className="preview-q">Can an assistant principal make the decision to suspend a student?</div>
       <div className="preview-a">
         <p>
-          Yes. <mark className="preview-mark">Schools must develop an Individual Allergic Reactions Risk Management Plan for students who have a Green Plan</mark>
-          <span className="cite" aria-label="Source 1">1</span>. It isn't needed for every student with allergies, only those whose
-          Green Plan has been supplied to the school by their parents or carers
-          <span className="cite" aria-label="Source 1">1</span>.
+          No. <mark className="preview-mark">Only a principal (including an acting principal) of the student's enrolled school has
+          authority to make the decision to suspend a student. This authority cannot be delegated.</mark>
+          <span className="cite" aria-label="Source 1">1</span> Before suspending, principals must also consider alternative
+          interventions and supports for the{" "}
+          <span className="nowrap">student<span className="cite" aria-label="Source 1">1</span>.</span>
         </p>
         <div className="preview-source">
           <span className="cite" aria-hidden>1</span>
-          <span><strong>Allergies</strong> › Policy › Summary</span>
-          <span className="muted">PAL, updated 23 Jan 2026</span>
+          <span><strong>Suspensions</strong> › Policy › Summary</span>
+          <span className="muted">PAL, updated 1 Jul 2025</span>
         </div>
       </div>
     </figure>
