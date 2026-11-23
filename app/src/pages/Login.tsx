@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Bell, Eye, EyeOff, Landmark, Lock, Quote } from "lucide-react";
+import { Eye, EyeOff, Landmark } from "lucide-react";
 import { api } from "../api";
 import { useMe } from "../App";
 import { Spinner } from "../components/bits";
@@ -78,16 +78,7 @@ export default function Login() {
       <main className="login-main">
         <section className="login-story" aria-label="About PolicyPilot">
           <h1>Policy answers you can point&nbsp;to.</h1>
-          <p className="login-lede">
-            Ask a question in plain words. PolicyPilot reads the Department's Policy and Advisory Library and your
-            school's own policies, then answers with the exact source behind every point.
-          </p>
           <AnswerPreview />
-          <ul className="login-facts">
-            <li><Quote size={16} aria-hidden /> Every answer links to the passage it came from</li>
-            <li><Lock size={16} aria-hidden /> Your school's documents stay private to your school</li>
-            <li><Bell size={16} aria-hidden /> You're told when a PAL topic your policies rely on changes</li>
-          </ul>
         </section>
 
         <section className="login-panel">

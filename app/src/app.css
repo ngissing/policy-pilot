@@ -399,9 +399,13 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
   min-height: 100%;
   display: flex;
   flex-direction: column;
+  /* A soft wash: Department blue light from the top left, school green from the bottom right. */
   background:
     radial-gradient(circle at 1px 1px, rgba(23, 32, 43, 0.07) 1px, transparent 0) 0 0 / 22px 22px,
-    linear-gradient(180deg, #f7f8fa 0%, var(--paper) 100%);
+    radial-gradient(ellipse 75% 65% at 0% 0%, rgba(45, 74, 168, 0.2), transparent 70%),
+    radial-gradient(ellipse 65% 60% at 100% 100%, rgba(31, 122, 92, 0.17), transparent 70%),
+    linear-gradient(180deg, #f2f4f8 0%, #eef1f5 100%);
+  background-attachment: fixed;
 }
 .login-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px clamp(16px, 4vw, 48px); }
 .login-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
@@ -428,7 +432,6 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
   max-width: 16ch;
   text-wrap: balance;
 }
-.login-lede { margin-top: 16px; font-size: 17px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; }
 
 .preview {
   margin: 28px 0 0;
@@ -472,9 +475,6 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 }
 .preview-source .muted { margin-left: auto; font-size: 12.5px; }
 
-.login-facts { list-style: none; padding: 0; margin: 26px 0 0; display: flex; flex-direction: column; gap: 10px; }
-.login-facts li { display: flex; align-items: center; gap: 10px; font-size: 14.5px; color: var(--ink-2); }
-.login-facts svg { flex: none; color: var(--dept); }
 
 .login-card {
   background: var(--surface);
@@ -526,10 +526,9 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 @media (max-width: 900px) {
   .login-main { grid-template-columns: 1fr; gap: 28px; padding-top: 8px; }
   .login-story h1 { font-size: 32px; }
-  .login-lede { font-size: 16px; }
   /* On phones the form comes first; the example answer follows below it. */
   .login-panel { order: -1; }
-  .login-story .preview, .login-facts { margin-top: 20px; }
+  .login-story .preview { margin-top: 20px; }
   .login-for { display: none; }
   .login-card { padding: 22px; }
 }
