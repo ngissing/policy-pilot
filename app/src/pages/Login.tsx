@@ -199,9 +199,9 @@ function AnswerPreview() {
       <div className="preview-a">
         <p>
           Yes. <mark className="preview-mark">Schools must develop an Individual Allergic Reactions Risk Management Plan for students who have a Green Plan</mark>
-          <span className="cite" aria-label="Source 1">1</span>. It isn't needed for every student with allergies, only those whose
-          Green Plan has been supplied to the school by their parents or carers
-          <span className="cite" aria-label="Source 1">1</span>.
+          <span className="nowrap"><span className="cite" aria-label="Source 1">1</span>.</span> It isn't needed for every student with
+          allergies, only those whose Green Plan has been supplied to the school by their parents or{" "}
+          <span className="nowrap">carers<span className="cite" aria-label="Source 1">1</span>.</span>
         </p>
         <div className="preview-source">
           <span className="cite" aria-hidden>1</span>
