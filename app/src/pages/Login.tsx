@@ -72,7 +72,6 @@ export default function Login() {
           <img src="/favicon.svg" width={28} height={28} alt="" />
           <span>PolicyPilot</span>
         </div>
-        <span className="login-for">For Victorian government schools</span>
       </header>
 
       <main className="login-main">
@@ -160,13 +159,9 @@ export default function Login() {
             </form>
           </div>
 
-          {mode !== "school" && (
+          {mode !== "school" && canCreateSchool && (
             <p className="login-newschool small">
-              {canCreateSchool ? (
-                <>New to PolicyPilot? <a href="#" onClick={(e) => { e.preventDefault(); switchTo("school"); }}>Set up your school</a></>
-              ) : (
-                "Setting up PolicyPilot for a new school? Ask whoever runs this site for an invitation link."
-              )}
+              New to PolicyPilot? <a href="#" onClick={(e) => { e.preventDefault(); switchTo("school"); }}>Set up your school</a>
             </p>
           )}
         </section>

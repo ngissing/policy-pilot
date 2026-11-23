@@ -399,17 +399,19 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  /* A soft wash: Department blue light from the top left, school green from the bottom right. */
+  /* One typeface for everything on this page: headline, form, example answer and fine print. */
+  font-family: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* A colour wash: Department blue from the top left, school green from the bottom right. */
   background:
     radial-gradient(circle at 1px 1px, rgba(23, 32, 43, 0.07) 1px, transparent 0) 0 0 / 22px 22px,
-    radial-gradient(ellipse 75% 65% at 0% 0%, rgba(45, 74, 168, 0.2), transparent 70%),
-    radial-gradient(ellipse 65% 60% at 100% 100%, rgba(31, 122, 92, 0.17), transparent 70%),
-    linear-gradient(180deg, #f2f4f8 0%, #eef1f5 100%);
+    radial-gradient(ellipse 85% 75% at 0% 0%, rgba(45, 74, 168, 0.32), transparent 72%),
+    radial-gradient(ellipse 75% 70% at 100% 100%, rgba(31, 122, 92, 0.28), transparent 72%),
+    linear-gradient(160deg, #e9eef8 0%, #edf2f3 55%, #e8f1ec 100%);
   background-attachment: fixed;
 }
-.login-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px clamp(16px, 4vw, 48px); }
+.login .cite { font-family: inherit; }
+.login-top { display: flex; align-items: center; gap: 16px; padding: 22px clamp(16px, 4vw, 48px); }
 .login-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
-.login-for { font-size: 13px; color: var(--ink-3); }
 
 .login-main {
   flex: 1;
@@ -424,11 +426,10 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 }
 
 .login-story h1 {
-  font-family: var(--serif);
-  font-weight: 600;
-  font-size: clamp(34px, 4.2vw, 50px);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  font-size: clamp(34px, 4.2vw, 52px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
   max-width: 16ch;
   text-wrap: balance;
 }
@@ -454,7 +455,7 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
   border-radius: 14px 14px 3px 14px;
   font-size: 14.5px;
 }
-.preview-a p { font-family: var(--serif); font-size: 16px; line-height: 1.65; }
+.preview-a p { font-size: 16px; line-height: 1.65; }
 .preview .cite { cursor: default; }
 .preview-mark {
   background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%) no-repeat 0 0 / 100% 100%;
@@ -529,7 +530,6 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
   /* On phones the form comes first; the example answer follows below it. */
   .login-panel { order: -1; }
   .login-story .preview { margin-top: 20px; }
-  .login-for { display: none; }
   .login-card { padding: 22px; }
 }
 
