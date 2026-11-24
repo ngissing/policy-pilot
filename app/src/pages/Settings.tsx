@@ -6,8 +6,8 @@ import { useMe } from "../App";
 import { CitedMarkdown, Spinner, usePoll, useToast } from "../components/bits";
 
 export const LENGTH_OPTIONS = [
-  { id: "short", label: "Short", about: "The direct answer and only the must-dos. Reads up to 5 passages." },
-  { id: "normal", label: "Normal", about: "The answer plus the key requirements or steps. Reads up to 7 passages." },
+  { id: "short", label: "Short", about: "A sentence or two and only the must-dos, about 60 words. Reads up to 4 passages." },
+  { id: "normal", label: "Normal", about: "The answer plus the key requirements or steps, about 130 words. Reads up to 6 passages." },
   { id: "extended", label: "Extended", about: "Every relevant requirement, exceptions, roles and related policies. Reads up to 10 passages." },
 ] as const;
 

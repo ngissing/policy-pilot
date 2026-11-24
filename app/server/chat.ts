@@ -22,7 +22,7 @@ function systemPrompt(schoolId: number): string {
 - School sources: the school's own policies, procedures and plans.
 
 How to answer:
-- Lead with the direct answer in one or two sentences, then give the detail as short steps or bullets when that helps someone act on it.
+- Lead with the direct answer. Add only as much detail as the length instruction at the end of the question allows; that instruction is a hard limit, and being brief matters more than being complete.
 - Base every statement on the sources. Put the source number in square brackets straight after each claim, like [2]. Never cite a number that is not in the sources.
 - Make clear what is mandatory ("must", "required") versus guidance or recommended practice, using the source's own wording for obligations, timeframes and roles.
 - If the school's document and PAL differ, or the school's document looks out of date against PAL, say so plainly and cite both. PAL takes precedence for government schools.
@@ -40,14 +40,16 @@ export type AnswerLength = "short" | "normal" | "extended";
 /** How many passages to read and how long to write, per answer-length setting. */
 export const LENGTHS: Record<AnswerLength, { k: number; minK: number; instruction: string }> = {
   short: {
-    k: 5,
+    k: 4,
     minK: 2,
-    instruction: "Keep this short: the direct answer in two or three sentences, then at most four bullets covering only what someone must do. Leave out background.",
+    instruction:
+      "Length: SHORT. At most 60 words. One or two sentences that answer the question, plus at most three very short bullets only if there are separate things someone must do. No headings, no background, no caveats unless the sources say the answer depends on something. Keep the citations.",
   },
   normal: {
-    k: 7,
+    k: 6,
     minK: 3,
-    instruction: "Give a focused answer someone can act on: the direct answer, then the key requirements or steps. Usually under 250 words.",
+    instruction:
+      "Length: NORMAL. At most 130 words. The direct answer in one or two sentences, then at most five short bullets with the key requirements or steps. No headings and no background beyond what someone needs to act.",
   },
   extended: {
     k: 10,
