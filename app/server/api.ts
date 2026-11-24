@@ -12,7 +12,7 @@ import {
   requireUser, requireAdmin, requireOwner, ownerEmail, schoolSignup, emailAllowed,
 } from "./auth.ts";
 import { limit, take, tooMany } from "./limits.ts";
-import { aiReady, claude, structured, friendlyAiError, MODELS, answerModel, processingModel, isModel, estimateCost } from "./ai.ts";
+import { aiReady, claude, structured, friendlyAiError, MODELS, answerModel, processingModel, isModel, estimateCost, apiKey, workspaceId, makeClient } from "./ai.ts";
 import { enqueue, deleteDocument, retagPending, CATEGORIES, DOC_TYPES, AUDIENCES } from "./ingest.ts";
 import { kindFromName, SUPPORTED } from "./text.ts";
 import { startPalSync, palSyncRunning, recategorisePal } from "./pal.ts";
@@ -536,7 +536,7 @@ api.post("/conversations/:id/ask", limit("ask", 120, HOUR, true), h(async (req, 
 api.get("/platform", requireOwner, (_req, res) => {
   const key = getSetting("anthropic_api_key");
   res.json({
-    ai: { ready: aiReady(), source: key ? "settings" : process.env.ANTHROPIC_API_KEY ? "environment" : null, hint: key ? `…${key.slice(-4)}` : null },
+    ai: { ready: aiReady(), source: key ? "settings" : process.env.ANTHROPIC_API_KEY ? "environment" : null, hint: key ? `…${key.slice(-4)}` : null, workspace: getSetting("anthropic_workspace_id") ? "settings" : process.env.ANTHROPIC_WORKSPACE_ID ? "environment" : null },
     models: { answers: answerModel(), processing: processingModel(), options: Object.entries(MODELS).map(([id, m]) => ({ id, ...m })) },
     pal: {
       topics: one<any>("SELECT COUNT(*) AS n FROM pal_topics WHERE retired_at IS NULL AND document_id IS NOT NULL")?.n ?? 0,
@@ -550,19 +550,22 @@ api.get("/platform", requireOwner, (_req, res) => {
 });
 
 api.put("/platform/key", requireOwner, h(async (req, res) => {
-  const key = str(req.body?.key, 300);
-  if (!key) {
+  if (req.body?.remove) {
     setSetting("anthropic_api_key", null);
     return res.json({ ok: true });
   }
-  const previous = getSetting("anthropic_api_key");
-  setSetting("anthropic_api_key", key);
+  // A blank key keeps the current one, so the workspace ID can be added on its own.
+  const key = str(req.body?.key, 300) || apiKey();
+  const workspace = req.body?.workspaceId !== undefined ? str(req.body.workspaceId, 100) || null : workspaceId();
+  if (!key) return bad(res, "Paste an API key first.");
   try {
-    await claude()!.models.retrieve(answerModel());
+    // Free check, before anything is saved, that the key (and workspace) work and can use the chosen model.
+    await makeClient(key, workspace).models.retrieve(answerModel());
   } catch (err) {
-    setSetting("anthropic_api_key", previous);
     return bad(res, friendlyAiError(err));
   }
+  if (str(req.body?.key, 300)) setSetting("anthropic_api_key", key);
+  if (req.body?.workspaceId !== undefined) setSetting("anthropic_workspace_id", workspace);
   recategorisePal().catch(() => {});
   res.json({ ok: true, retagging: retagPending() });
 }));

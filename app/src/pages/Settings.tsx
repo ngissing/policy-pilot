@@ -244,6 +244,7 @@ function Platform() {
   const toast = useToast();
   const [p, setP] = useState<any>(null);
   const [key, setKey] = useState("");
+  const [workspace, setWorkspace] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => api("/platform").then(setP), []);
@@ -258,8 +259,12 @@ function Platform() {
     setSaving(true);
     setError(null);
     try {
-      const r = await api("/platform/key", { method: "PUT", body: { key } });
+      const r = await api("/platform/key", {
+        method: "PUT",
+        body: { key, ...(workspace.trim() ? { workspaceId: workspace.trim() } : {}) },
+      });
       setKey("");
+      setWorkspace("");
       toast(r.retagging ? `Key saved. Updating ${r.retagging} documents that were added without AI.` : "Key saved and working.");
       await load();
       await refresh();
@@ -270,7 +275,7 @@ function Platform() {
   };
   const removeKey = async () => {
     if (!confirm("Remove the API key? Questions will stop being answered.")) return;
-    await api("/platform/key", { method: "PUT", body: { key: "" } });
+    await api("/platform/key", { method: "PUT", body: { remove: true } });
     load();
     refresh();
   };
@@ -291,18 +296,28 @@ function Platform() {
         <h3 className="row"><KeyRound size={16} /> AI answers</h3>
         {p.ai.ready ? (
           <div className="row">
-            <span className="badge ok">Connected</span>
+            <span className="badge ok">Key added</span>
             <span className="small muted">
-              {p.ai.source === "environment" ? "Using ANTHROPIC_API_KEY from the server environment" : `Key ending ${p.ai.hint}`}, model {p.ai.model}
+              {p.ai.source === "environment" ? "Using ANTHROPIC_API_KEY from the server environment" : `Key ending ${p.ai.hint}`}
+              {p.ai.workspace && ", with a workspace ID"}. Saving a key checks it with Anthropic.
             </span>
             {p.ai.source === "settings" && <button className="btn ghost sm" onClick={removeKey}>Remove key</button>}
           </div>
         ) : (
           <p className="small">Add an Anthropic API key to turn on answers, document briefings and automatic tagging. Get one at console.anthropic.com.</p>
         )}
-        <form className="row" onSubmit={saveKey}>
-          <input className="input" style={{ maxWidth: 420 }} type="password" autoComplete="off" placeholder={p.ai.ready ? "Replace the key" : "sk-ant-…"} value={key} onChange={(e) => setKey(e.target.value)} aria-label="Anthropic API key" />
-          <button className="btn primary" type="submit" disabled={!key || saving}>{saving && <Spinner />} Save key</button>
+        <form className="stack" style={{ gap: 8 }} onSubmit={saveKey}>
+          <div className="row">
+            <input className="input" style={{ maxWidth: 420 }} type="password" autoComplete="off" placeholder={p.ai.ready ? "Replace the key (or leave blank)" : "sk-ant-…"} value={key} onChange={(e) => setKey(e.target.value)} aria-label="Anthropic API key" />
+            <button className="btn primary" type="submit" disabled={(!key && !workspace.trim()) || saving}>{saving && <Spinner />} Save and check</button>
+          </div>
+          <div className="row">
+            <input className="input" style={{ maxWidth: 420 }} autoComplete="off" placeholder="Workspace ID (only for keys starting sk-ant-usr)" value={workspace} onChange={(e) => setWorkspace(e.target.value)} aria-label="Anthropic workspace ID" />
+          </div>
+          <p className="small muted">
+            A key made inside a workspace in the Anthropic Console (it starts with sk-ant-api) works on its own. A personal
+            key (sk-ant-usr) also needs the workspace ID, shown in the Console under Workspaces.
+          </p>
         </form>
         {error && <div className="notice error" role="alert">{error}</div>}
       </div>
