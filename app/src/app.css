@@ -390,19 +390,147 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 
 /* ─── Auth ──────────────────────────────────────────────────────────────── */
 
-.auth { min-height: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-.auth-side { background: var(--ink); color: #fff; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
-.auth-side h1 { font-size: 40px; line-height: 1.1; max-width: 14ch; letter-spacing: -0.02em; }
-.auth-side p { color: #c9d1dc; max-width: 42ch; margin-top: 16px; font-size: 16px; }
-.auth-tabs { position: absolute; right: 0; top: 120px; display: flex; flex-direction: column; gap: 10px; }
-.auth-tabs span { display: block; padding: 10px 18px 10px 16px; border-radius: 6px 0 0 6px; font-weight: 650; font-size: 14px; }
+/* "Choose a new password" screen after a reset. */
 .auth-form { display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
 .auth-form form { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 16px; }
-@media (max-width: 860px) {
-  .auth { grid-template-columns: 1fr; }
-  .auth-side { padding: 28px 20px; }
-  .auth-side h1 { font-size: 30px; }
-  .auth-tabs { display: none; }
+
+/* Sign-in page: the product's own promise on the left, shown as a real cited answer; a quiet form on the right. */
+.login {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* One typeface for everything on this page: headline, form, example answer and fine print. */
+  font-family: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* A colour wash: Department blue from the top left, school green from the bottom right. */
+  background:
+    radial-gradient(circle at 1px 1px, rgba(23, 32, 43, 0.07) 1px, transparent 0) 0 0 / 22px 22px,
+    radial-gradient(ellipse 85% 75% at 0% 0%, rgba(45, 74, 168, 0.32), transparent 72%),
+    radial-gradient(ellipse 75% 70% at 100% 100%, rgba(31, 122, 92, 0.28), transparent 72%),
+    linear-gradient(160deg, #e9eef8 0%, #edf2f3 55%, #e8f1ec 100%);
+  background-attachment: fixed;
+}
+.login .cite { font-family: inherit; }
+.login-top { display: flex; align-items: center; gap: 16px; padding: 22px clamp(16px, 4vw, 48px); }
+.login-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+
+.login-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(16px, 4vh, 48px) clamp(16px, 4vw, 48px) 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 420px);
+  gap: clamp(32px, 6vw, 88px);
+  align-items: center;
+}
+
+.login-story h1 {
+  font-weight: 700;
+  font-size: clamp(34px, 4.2vw, 52px);
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  max-width: 16ch;
+  text-wrap: balance;
+}
+
+.preview {
+  margin: 28px 0 0;
+  max-width: 560px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px rgba(23, 32, 43, 0.05), 0 18px 40px -18px rgba(23, 32, 43, 0.22);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.preview-q {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--ink);
+  color: #fff;
+  padding: 9px 14px;
+  border-radius: 14px 14px 3px 14px;
+  font-size: 14.5px;
+}
+.preview-a p { font-size: 16px; line-height: 1.65; }
+.preview .cite { cursor: default; }
+.preview-mark {
+  background: linear-gradient(transparent 12%, var(--mark) 12%, var(--mark) 88%, transparent 88%) no-repeat 0 0 / 100% 100%;
+  animation: mark-sweep 900ms 400ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes mark-sweep { from { background-size: 0% 100%; } to { background-size: 100% 100%; } }
+.preview-source {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  background: var(--paper);
+}
+.preview-source .muted { margin-left: auto; font-size: 12.5px; }
+
+
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(23, 32, 43, 0.05), 0 24px 48px -24px rgba(23, 32, 43, 0.25);
+  padding: 28px;
+}
+.login-tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--sunken); border-radius: 10px; padding: 4px; margin-bottom: 24px; }
+.login-tabs button {
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.login-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(23, 32, 43, 0.14); }
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+.login-form h2 { font-size: 24px; letter-spacing: -0.015em; }
+.login-form h2 + p { margin-top: 6px; font-size: 14.5px; }
+.login-form .input { height: 44px; }
+.login-code { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.login-password { position: relative; }
+.login-password .input { padding-right: 44px; }
+.login-reveal {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.login-reveal:hover { color: var(--ink); background: var(--sunken); }
+.login-submit { height: 46px; font-size: 15px; margin-top: 4px; }
+.login-newschool { text-align: center; margin-top: 16px; color: var(--ink-2); }
+
+.login-foot { padding: 18px clamp(16px, 4vw, 48px) 24px; font-size: 12.5px; color: var(--ink-3); }
+.login-foot span { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 900px) {
+  .login-main { grid-template-columns: 1fr; gap: 28px; padding-top: 8px; }
+  .login-story h1 { font-size: 32px; }
+  /* On phones the form comes first; the example answer follows below it. */
+  .login-panel { order: -1; }
+  .login-story .preview { margin-top: 20px; }
+  .login-card { padding: 22px; }
 }
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: var(--r-md); z-index: 100; font-size: 14px; box-shadow: var(--lift); }
@@ -425,3 +553,5 @@ mark, .hl { background: linear-gradient(transparent 12%, var(--mark) 12%, var(--
 .answer.compact { font-size: 15px; line-height: 1.55; }
 
 .length-select { height: 32px; width: auto; padding: 0 8px; font-size: 13.5px; border-radius: 999px; background: var(--sunken); border-color: transparent; font-weight: 600; color: var(--ink-2); }
+
+.nowrap { white-space: nowrap; }
